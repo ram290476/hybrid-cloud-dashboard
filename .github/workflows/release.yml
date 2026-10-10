@@ -1,0 +1,35 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: gcp, aws, or azure
+        required: true
+        type: choice
+        options: [gcp, aws, azure]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - name: Refuse a deploy without a configured identity
+        run: |
+          echo "OIDC deploy for ${{ inputs.cloud }} is gated."
+          echo "This workflow does not call a cloud API until Ram fills the workload identity."
+          echo "No stored cloud keys are used."
+          case "${{ inputs.cloud }}" in
+            gcp) test -n "${GCP_WORKLOAD_IDENTITY_PROVIDER:-}" ;;
+            aws) test -n "${AWS_ROLE_ARN:-}" ;;
+            azure) test -n "${AZURE_CLIENT_ID:-}" ;;
+          esac
+        env:
+          GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}

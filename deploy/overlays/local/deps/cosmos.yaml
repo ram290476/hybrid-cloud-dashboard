@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cosmos
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: cosmos }
+  template:
+    metadata:
+      labels: { app: cosmos }
+    spec:
+      containers:
+      - name: cosmos
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext
+        env:
+        - name: PROTOCOL
+          value: https
+        - name: GATEWAY_PUBLIC_ENDPOINT
+          value: cosmos.hcd-deps
+        ports:
+        - containerPort: 8081
+          name: gateway
+        - containerPort: 8080
+          name: health
+        - containerPort: 1234
+          name: explorer
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 3Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cosmos
+spec:
+  selector: { app: cosmos }
+  ports:
+  - name: gateway
+    port: 8081
+    targetPort: 8081
+  - name: health
+    port: 8080
+    targetPort: 8080
+  - name: explorer
+    port: 1234
+    targetPort: 1234

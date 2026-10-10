@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dotnet-azure-blue
+  labels:
+    app: dotnet-azure
+    version: blue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dotnet-azure
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: dotnet-azure
+        version: blue
+    spec:
+      containers:
+      - name: api
+        image: localhost:5001/hcd-dotnet-azure:dev
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: APP_BACKEND
+          value: "azure-dotnet"
+        - name: APP_LANG
+          value: "dotnet"
+        - name: APP_RUNTIME
+          value: "app-service"
+        - name: AUTH_MODE
+          value: "dev"
+        - name: DEV_JWT_SECRET
+          value: "local-dev-secret-change-me"
+        - name: AZURE_STORAGE_CONNECTION
+          value: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite.hcd-deps.svc.cluster.local:10000/devstoreaccount1;"
+        - name: BLOB_CONTAINER
+          value: "hcd-serving"
+        - name: APP_COLOR
+          value: blue
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dotnet-azure-green
+  labels:
+    app: dotnet-azure
+    version: green
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: dotnet-azure
+      version: green
+  template:
+    metadata:
+      labels:
+        app: dotnet-azure
+        version: green
+    spec:
+      containers:
+      - name: api
+        image: localhost:5001/hcd-dotnet-azure:dev
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: APP_BACKEND
+          value: "azure-dotnet"
+        - name: APP_LANG
+          value: "dotnet"
+        - name: APP_RUNTIME
+          value: "app-service"
+        - name: AUTH_MODE
+          value: "dev"
+        - name: DEV_JWT_SECRET
+          value: "local-dev-secret-change-me"
+        - name: AZURE_STORAGE_CONNECTION
+          value: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite.hcd-deps.svc.cluster.local:10000/devstoreaccount1;"
+        - name: BLOB_CONTAINER
+          value: "hcd-serving"
+        - name: APP_COLOR
+          value: green
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080

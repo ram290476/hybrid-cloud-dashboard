@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0e13" />
+    <title>Hybrid operations</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      .ops { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; }
+      .ops-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 22px; }
+      .ops-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+      .metric { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px; }
+      .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+      .bar span { display: block; height: 100%; background: var(--blue); }
+      .dot { width: 8px; height: 8px; border-radius: 99px; display: inline-block; margin-right: 6px; background: var(--red); }
+      .dot.up { background: var(--green); }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+      th { color: var(--muted); font-weight: 500; }
+      a { color: var(--blue); }
+      @media (max-width: 800px) {
+        .ops-grid { grid-template-columns: 1fr; }
+        .ops-head { flex-direction: column; align-items: flex-start; }
+      }
+    </style>
+    <script type="module" src="/hybrid.js"></script>
+  </head>
+  <body>
+    <main class="ops">
+      <header class="ops-head">
+        <div>
+          <p class="eyebrow">HYBRID CLOUD</p>
+          <h1>Operations</h1>
+          <p class="muted">One UI, three backends. The facade picks a live color and writes an audit line for every API call.</p>
+        </div>
+        <p><a href="/">Market dashboard</a></p>
+      </header>
+      <section id="cards" class="ops-grid" aria-live="polite"></section>
+      <section class="panel" style="margin-top: 16px">
+        <header class="panel-header"><h2>Routing</h2></header>
+        <div class="panel-body" id="routes"></div>
+      </section>
+      <section class="panel" style="margin-top: 16px">
+        <header class="panel-header"><h2>Audit log</h2></header>
+        <div class="panel-body" id="audit"></div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hcd
+resources:
+  - namespace.yaml
+  - ../../../base/go-gcp
+  - ../../../base/python-aws
+  - ../../../base/dotnet-azure
+  - ../../../base/facade
+  - ../../../base/frontend
+  - gateway.yaml
+configMapGenerator:
+  - name: facade-policy
+    files:
+      - routing-policy.kind.yaml=../../../../facade/policy/routing-policy.kind.yaml
+generatorOptions:
+  disableNameSuffixHash: true

@@ -1,0 +1,7 @@
+{
+  "apiBaseUrl": "http://localhost/api/v1",
+  "cognitoDomain": "https://your-cognito-domain.auth.us-west-1.amazoncognito.com",
+  "clientId": "your-public-spa-client-id",
+  "callbackUrl": "http://localhost:8080/",
+  "logoutUrl": "http://localhost:8080/"
+}

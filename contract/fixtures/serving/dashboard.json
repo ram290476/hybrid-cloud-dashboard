@@ -1,0 +1,10 @@
+{
+  "generated_at": "2026-10-09T22:00:00Z",
+  "data_version": "fixture-2026.10.09",
+  "tickers": {
+    "TSLA": {"symbol": "TSLA", "name": "Tesla"},
+    "SPCX": {"symbol": "SPCX", "name": "SpaceX"}
+  },
+  "events": [],
+  "releases": []
+}

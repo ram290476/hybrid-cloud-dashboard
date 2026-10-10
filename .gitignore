@@ -1,0 +1,32 @@
+# Local secrets and machine config — never commit real credentials
+.env
+.env.*
+!.env.example
+**/config.json
+sync/config.yaml
+**/*.tfvars
+!**/*.tfvars.example
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Language / build
+**/bin/
+**/obj/
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/node_modules/
+**/*.user
+**/TestResults/
+**/coverage/
+**/.dotnet/
+
+# Editor
+.idea/
+.vscode/*.log
+*.swp
+.DS_Store

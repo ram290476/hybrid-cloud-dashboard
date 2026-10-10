@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: facade
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: facade
+  template:
+    metadata:
+      labels:
+        app: facade
+    spec:
+      containers:
+      - name: facade
+        image: localhost:5001/hcd-facade:dev
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: ROUTING_POLICY
+          value: /policy/routing-policy.kind.yaml
+        - name: DEV_INJECT_TOKEN
+          value: "1"
+        - name: DEV_JWT_SECRET
+          value: local-dev-secret-change-me
+        - name: AUDIT_IP_SALT
+          value: hcd-local-salt
+        volumeMounts:
+        - name: policy
+          mountPath: /policy
+        readinessProbe:
+          httpGet: { path: /readyz, port: 8080 }
+        livenessProbe:
+          httpGet: { path: /healthz, port: 8080 }
+      volumes:
+      - name: policy
+        configMap:
+          name: facade-policy
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: facade
+spec:
+  selector:
+    app: facade
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

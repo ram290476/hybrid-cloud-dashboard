@@ -1,0 +1,17 @@
+# Native AOT image for the cloud publish path. Local kind uses the JIT Dockerfile
+# (section 9.4.2). This file is not the default local build.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY backends/dotnet-azure /src/backends/dotnet-azure
+WORKDIR /src/backends/dotnet-azure
+RUN dotnet publish -c Release -o /out \
+    -p:PublishAot=true -p:InvariantGlobalization=true
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
+WORKDIR /app
+COPY --from=build /out /app
+COPY contract/fixtures /fixtures
+ENV FIXTURES_DIR=/fixtures PORT=8080
+EXPOSE 8080
+USER $APP_UID
+ENTRYPOINT ["/app/DashboardApi"]

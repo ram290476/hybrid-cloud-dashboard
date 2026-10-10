@@ -1,0 +1,53 @@
+# Process-mode policy for `make demo` on a laptop. Same numbers as the cloud file.
+apiVersion: hcd.ram.dev/v1
+kind: RoutingPolicy
+metadata:
+  name: hcd-local
+  version: "2026.10.10"
+spec:
+  evaluation:
+    interval_s: 5
+    ewma_alpha: 0.3
+    min_dwell_s: 120
+    hysteresis_pct: 10
+    min_probe_weight: 2
+  budget:
+    monthly_usd: 0
+    alert_at_pct: [50, 80, 100]
+    on_exceed: lowest-cost
+  on_all_caps: gcp-go
+  backends:
+    - name: gcp-go
+      endpoint: http://127.0.0.1:8081
+      labels: { lang: go, runtime: cloud-run }
+      cost: { per_million_requests_usd: 0.40, per_gb_egress_usd: 0.12 }
+      free_tier: { requests: 2000000, threshold_pct: 80 }
+      hard_cap_monthly_usd: 5
+      max_weight: 100
+    - name: azure-dotnet
+      endpoint: http://127.0.0.1:8083
+      labels: { lang: dotnet, runtime: app-service }
+      cost: { per_million_requests_usd: 0.40, per_gb_egress_usd: 0.087 }
+      free_tier: { requests: 2000000, threshold_pct: 80 }
+      hard_cap_monthly_usd: 5
+      max_weight: 100
+    - name: aws-python
+      endpoint: http://127.0.0.1:8082
+      labels: { lang: python, runtime: ecs-fargate }
+      cost: { per_million_requests_usd: 0.60, per_gb_egress_usd: 0.09 }
+      free_tier: { requests: 1000000, threshold_pct: 80 }
+      hard_cap_monthly_usd: 5
+      max_weight: 100
+  routes:
+    - match: { path_prefix: /api/v1/prefs }
+      policy: lowest-cost
+      weights: { w_cost: 0.6, w_perf: 0.2, w_err: 0.2 }
+      slo_floor: { p95_ms: 400, error_rate: 0.01 }
+      fallback_order: [gcp-go, azure-dotnet, aws-python]
+      affinity: { hash_on: jwt-sub }
+    - match: { path_prefix: /api }
+      policy: free-tier-first
+      weights: { w_cost: 0.5, w_perf: 0.3, w_err: 0.2 }
+      slo_floor: { p95_ms: 400, error_rate: 0.01 }
+      fallback_order: [gcp-go, azure-dotnet, aws-python]
+  overrides: []

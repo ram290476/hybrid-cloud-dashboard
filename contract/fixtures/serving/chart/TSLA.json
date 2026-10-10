@@ -1,0 +1,7 @@
+{
+  "ticker": "TSLA",
+  "data_version": "fixture-2026.10.09",
+  "bars": [
+    {"date": "2026-10-08", "close": 421.5, "close_raw": 421.5, "adj_close": 421.5, "volume": 18000000}
+  ]
+}

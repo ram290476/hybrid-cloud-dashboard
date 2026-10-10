@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-gcp-blue
+  labels:
+    app: go-gcp
+    version: blue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-gcp
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: go-gcp
+        version: blue
+    spec:
+      containers:
+      - name: api
+        image: localhost:5001/hcd-go-gcp:dev
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: APP_BACKEND
+          value: "gcp-go"
+        - name: APP_LANG
+          value: "go"
+        - name: APP_RUNTIME
+          value: "cloud-run"
+        - name: AUTH_MODE
+          value: "dev"
+        - name: DEV_JWT_SECRET
+          value: "local-dev-secret-change-me"
+        - name: STORAGE_EMULATOR_HOST
+          value: "http://fake-gcs.hcd-deps.svc.cluster.local:4443"
+        - name: GCS_BUCKET
+          value: "hcd-serving"
+        - name: FIRESTORE_EMULATOR_HOST
+          value: "firestore.hcd-deps.svc.cluster.local:8080"
+        - name: APP_COLOR
+          value: blue
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-gcp-green
+  labels:
+    app: go-gcp
+    version: green
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: go-gcp
+      version: green
+  template:
+    metadata:
+      labels:
+        app: go-gcp
+        version: green
+    spec:
+      containers:
+      - name: api
+        image: localhost:5001/hcd-go-gcp:dev
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: APP_BACKEND
+          value: "gcp-go"
+        - name: APP_LANG
+          value: "go"
+        - name: APP_RUNTIME
+          value: "cloud-run"
+        - name: AUTH_MODE
+          value: "dev"
+        - name: DEV_JWT_SECRET
+          value: "local-dev-secret-change-me"
+        - name: STORAGE_EMULATOR_HOST
+          value: "http://fake-gcs.hcd-deps.svc.cluster.local:4443"
+        - name: GCS_BUCKET
+          value: "hcd-serving"
+        - name: FIRESTORE_EMULATOR_HOST
+          value: "firestore.hcd-deps.svc.cluster.local:8080"
+        - name: APP_COLOR
+          value: green
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080

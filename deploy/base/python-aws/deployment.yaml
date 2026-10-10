@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-aws-blue
+  labels:
+    app: python-aws
+    version: blue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-aws
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: python-aws
+        version: blue
+    spec:
+      containers:
+      - name: api
+        image: localhost:5001/hcd-python-aws:dev
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: APP_BACKEND
+          value: "aws-python"
+        - name: APP_LANG
+          value: "python"
+        - name: APP_RUNTIME
+          value: "ecs-fargate"
+        - name: AUTH_MODE
+          value: "dev"
+        - name: DEV_JWT_SECRET
+          value: "local-dev-secret-change-me"
+        - name: AWS_ENDPOINT_URL_S3
+          value: "http://minio.hcd-deps.svc.cluster.local:9000"
+        - name: AWS_ENDPOINT_URL_DYNAMODB
+          value: "http://dynamodb.hcd-deps.svc.cluster.local:8000"
+        - name: AWS_ACCESS_KEY_ID
+          value: "minioadmin"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "minioadmin"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        - name: S3_BUCKET
+          value: "hcd-serving"
+        - name: PREFS_TABLE
+          value: "hcd-prefs"
+        - name: APP_COLOR
+          value: blue
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-aws-green
+  labels:
+    app: python-aws
+    version: green
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: python-aws
+      version: green
+  template:
+    metadata:
+      labels:
+        app: python-aws
+        version: green
+    spec:
+      containers:
+      - name: api
+        image: localhost:5001/hcd-python-aws:dev
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: APP_BACKEND
+          value: "aws-python"
+        - name: APP_LANG
+          value: "python"
+        - name: APP_RUNTIME
+          value: "ecs-fargate"
+        - name: AUTH_MODE
+          value: "dev"
+        - name: DEV_JWT_SECRET
+          value: "local-dev-secret-change-me"
+        - name: AWS_ENDPOINT_URL_S3
+          value: "http://minio.hcd-deps.svc.cluster.local:9000"
+        - name: AWS_ENDPOINT_URL_DYNAMODB
+          value: "http://dynamodb.hcd-deps.svc.cluster.local:8000"
+        - name: AWS_ACCESS_KEY_ID
+          value: "minioadmin"
+        - name: AWS_SECRET_ACCESS_KEY
+          value: "minioadmin"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        - name: S3_BUCKET
+          value: "hcd-serving"
+        - name: PREFS_TABLE
+          value: "hcd-prefs"
+        - name: APP_COLOR
+          value: green
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080

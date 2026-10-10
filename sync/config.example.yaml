@@ -1,0 +1,23 @@
+# Local hcd-sync profile. Copy to config.yaml (gitignored) only if you want
+# values other than the defaults in scripts/hcd-sync-env.sh.
+# No real cloud credentials belong in this file.
+interval: 30s
+prefix: prefs/
+clouds:
+  gcp-go:
+    kind: gcs
+    endpoint: http://127.0.0.1:4443
+    bucket: hcd-serving
+  aws-python:
+    kind: s3
+    endpoint: http://127.0.0.1:9000
+    bucket: hcd-serving
+    access_key_id: minioadmin
+    secret_access_key: minioadmin
+  azure-dotnet:
+    kind: azure-blob
+    endpoint: http://127.0.0.1:10000
+    account: devstoreaccount1
+    # Public Azurite well-known key. Replace only for a real storage account, via the environment.
+    account_key: Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
+    container: hcd-serving

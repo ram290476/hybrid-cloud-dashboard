@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Go backend",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/backends/go-gcp/cmd/api",
+      "env": { "PORT": "8081" }
+    },
+    {
+      "name": "Facade",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/facade/cmd/facade",
+      "env": {
+        "PORT": "8080",
+        "FRONTEND_DIR": "${workspaceFolder}/frontend",
+        "DEV_INJECT_TOKEN": "1",
+        "ROUTING_POLICY": "${workspaceFolder}/facade/policy/routing-policy.local.yaml"
+      }
+    },
+    {
+      "name": "Python backend",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["dashboard_api.main:app", "--host", "127.0.0.1", "--port", "8082"],
+      "cwd": "${workspaceFolder}/backends/python-aws/src",
+      "env": { "PORT": "8082" }
+    },
+    {
+      "name": ".NET backend",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/backends/dotnet-azure/bin/Debug/net10.0/DashboardApi.dll",
+      "cwd": "${workspaceFolder}/backends/dotnet-azure",
+      "env": { "ASPNETCORE_URLS": "http://127.0.0.1:8083" }
+    }
+  ]
+}

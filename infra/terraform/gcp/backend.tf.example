@@ -1,0 +1,7 @@
+# Copy to backend.tf only after a remote state bucket exists. The default is local state.
+# terraform {
+#   backend "gcs" {
+#     bucket = "hcd-tfstate-placeholder"
+#     prefix = "gcp"
+#   }
+# }

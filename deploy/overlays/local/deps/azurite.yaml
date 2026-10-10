@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azurite
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: azurite }
+  template:
+    metadata:
+      labels: { app: azurite }
+    spec:
+      containers:
+      - name: azurite
+        image: mcr.microsoft.com/azure-storage/azurite:3.33.0
+        args: ["azurite-blob", "--blobHost", "0.0.0.0", "--blobPort", "10000", "--loose", "--skipApiVersionCheck"]
+        ports:
+        - containerPort: 10000
+        readinessProbe:
+          tcpSocket: { port: 10000 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: azurite
+spec:
+  selector: { app: azurite }
+  ports:
+  - port: 10000
+    targetPort: 10000

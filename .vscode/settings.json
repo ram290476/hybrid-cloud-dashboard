@@ -1,0 +1,16 @@
+{
+  "editor.formatOnSave": true,
+  "go.useLanguageServer": true,
+  "python.defaultInterpreterPath": "${workspaceFolder}/backends/python-aws/.venv/bin/python",
+  "[python]": { "editor.defaultFormatter": "charliermarsh.ruff" },
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true,
+    "**/.venv": true,
+    "**/node_modules": true,
+    "**/.terraform": true
+  },
+  "yaml.schemas": {
+    "https://json.schemastore.org/kustomization.json": "deploy/**/kustomization.yaml"
+  }
+}
