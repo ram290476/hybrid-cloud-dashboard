@@ -1,0 +1,16 @@
+{
+  "folders": [
+    { "name": "frontend", "path": "frontend" },
+    { "name": "go-gcp", "path": "backends/go-gcp" },
+    { "name": "python-aws", "path": "backends/python-aws" },
+    { "name": "dotnet-azure", "path": "backends/dotnet-azure" },
+    { "name": "facade", "path": "facade" },
+    { "name": "sync", "path": "sync" },
+    { "name": "infra", "path": "infra" },
+    { "name": "deploy", "path": "deploy" },
+    { "path": "." }
+  ],
+  "settings": {
+    "editor.formatOnSave": true
+  }
+}

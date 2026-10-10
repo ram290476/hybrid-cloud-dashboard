@@ -1,0 +1,219 @@
+[
+  {
+    "name": "theme-and-ticker-from-different-clouds",
+    "docs": [
+      {
+        "user_sub": "user-1",
+        "fields": {
+          "display.theme": {
+            "value": "terminal-amber",
+            "hlc": {
+              "wall_ms": 200,
+              "counter": 0,
+              "origin": "azure-dotnet"
+            }
+          },
+          "display.time_zone": {
+            "value": "America/Los_Angeles",
+            "hlc": {
+              "wall_ms": 100,
+              "counter": 0,
+              "origin": "gcp-go"
+            }
+          }
+        },
+        "tickers": {
+          "adds": {
+            "a1": {
+              "value": "TSLA",
+              "hlc": {
+                "wall_ms": 100,
+                "counter": 0,
+                "origin": "gcp-go"
+              }
+            }
+          },
+          "removes": {}
+        },
+        "pinned": {
+          "adds": {
+            "p1": {
+              "value": "TSLA",
+              "hlc": {
+                "wall_ms": 110,
+                "counter": 0,
+                "origin": "gcp-go"
+              }
+            }
+          },
+          "removes": {}
+        },
+        "version": 2
+      },
+      {
+        "user_sub": "user-1",
+        "fields": {
+          "display.chart_period": {
+            "value": "1Y",
+            "hlc": {
+              "wall_ms": 180,
+              "counter": 0,
+              "origin": "aws-python"
+            }
+          },
+          "display.theme": {
+            "value": "industrial-dark",
+            "hlc": {
+              "wall_ms": 150,
+              "counter": 0,
+              "origin": "gcp-go"
+            }
+          }
+        },
+        "tickers": {
+          "adds": {
+            "b1": {
+              "value": "SPCX",
+              "hlc": {
+                "wall_ms": 160,
+                "counter": 0,
+                "origin": "aws-python"
+              }
+            }
+          },
+          "removes": {}
+        },
+        "pinned": {
+          "adds": {},
+          "removes": {}
+        },
+        "version": 4
+      }
+    ],
+    "want": {
+      "user_sub": "user-1",
+      "fields": {
+        "display.chart_period": {
+          "value": "1Y",
+          "hlc": {
+            "wall_ms": 180,
+            "counter": 0,
+            "origin": "aws-python"
+          }
+        },
+        "display.theme": {
+          "value": "terminal-amber",
+          "hlc": {
+            "wall_ms": 200,
+            "counter": 0,
+            "origin": "azure-dotnet"
+          }
+        },
+        "display.time_zone": {
+          "value": "America/Los_Angeles",
+          "hlc": {
+            "wall_ms": 100,
+            "counter": 0,
+            "origin": "gcp-go"
+          }
+        }
+      },
+      "tickers": {
+        "adds": {
+          "a1": {
+            "value": "TSLA",
+            "hlc": {
+              "wall_ms": 100,
+              "counter": 0,
+              "origin": "gcp-go"
+            }
+          },
+          "b1": {
+            "value": "SPCX",
+            "hlc": {
+              "wall_ms": 160,
+              "counter": 0,
+              "origin": "aws-python"
+            }
+          }
+        },
+        "removes": {}
+      },
+      "pinned": {
+        "adds": {
+          "p1": {
+            "value": "TSLA",
+            "hlc": {
+              "wall_ms": 110,
+              "counter": 0,
+              "origin": "gcp-go"
+            }
+          }
+        },
+        "removes": {}
+      },
+      "version": 4
+    }
+  },
+  {
+    "name": "remove-observed-tag",
+    "docs": [
+      {
+        "user_sub": "user-1",
+        "fields": {},
+        "tickers": {
+          "adds": {
+            "a1": {
+              "value": "TSLA",
+              "hlc": {
+                "wall_ms": 100,
+                "counter": 0,
+                "origin": "gcp-go"
+              }
+            }
+          },
+          "removes": {
+            "a1": {
+              "wall_ms": 300,
+              "counter": 0,
+              "origin": "aws-python"
+            }
+          }
+        },
+        "pinned": {
+          "adds": {},
+          "removes": {}
+        },
+        "version": 0
+      }
+    ],
+    "want": {
+      "user_sub": "user-1",
+      "fields": {},
+      "tickers": {
+        "adds": {
+          "a1": {
+            "value": "TSLA",
+            "hlc": {
+              "wall_ms": 100,
+              "counter": 0,
+              "origin": "gcp-go"
+            }
+          }
+        },
+        "removes": {
+          "a1": {
+            "wall_ms": 300,
+            "counter": 0,
+            "origin": "aws-python"
+          }
+        }
+      },
+      "pinned": {
+        "adds": {},
+        "removes": {}
+      },
+      "version": 0
+    }
+  }
+]

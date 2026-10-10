@@ -1,0 +1,10 @@
+# Source this before hcd-sync. Values are local emulator endpoints only.
+export GCS_EMULATOR_HOST="${GCS_EMULATOR_HOST:-http://127.0.0.1:4443}"
+export GCS_BUCKET="${GCS_BUCKET:-hcd-serving}"
+export S3_ENDPOINT="${S3_ENDPOINT:-http://127.0.0.1:9000}"
+export S3_BUCKET="${S3_BUCKET:-hcd-serving}"
+export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-minioadmin}"
+export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-minioadmin}"
+export AZURE_BLOB_ENDPOINT="${AZURE_BLOB_ENDPOINT:-http://127.0.0.1:10000}"
+export AZURE_STORAGE_ACCOUNT="${AZURE_STORAGE_ACCOUNT:-devstoreaccount1}"
+export BLOB_CONTAINER="${BLOB_CONTAINER:-hcd-serving}"

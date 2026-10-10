@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ram.hcd-sync</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartInterval</key>
+  <integer>30</integer>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd "$HOME/src/hybrid-cloud-dashboard" &amp;&amp; . scripts/hcd-sync-env.sh &amp;&amp; cd sync &amp;&amp; HCD_SYNC_ONCE=1 go run ./cmd/hcd-sync</string>
+  </array>
+  <key>StandardOutPath</key>
+  <string>/tmp/hcd-sync.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hcd-sync.log</string>
+</dict>
+</plist>

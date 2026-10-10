@@ -1,0 +1,7 @@
+{
+  "ticker": "SPCX",
+  "data_version": "fixture-2026.10.09",
+  "bars": [
+    {"date": "2026-10-08", "close": 138.0, "close_raw": 138.0, "adj_close": 138.0, "volume": 900000}
+  ]
+}

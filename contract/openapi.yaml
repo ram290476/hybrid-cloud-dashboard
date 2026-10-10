@@ -1,0 +1,174 @@
+openapi: 3.1.0
+info:
+  title: Hybrid Cloud Dashboard API
+  version: 1.0.0
+  summary: Shared contract for the Go, Python, and .NET backends.
+  description: |
+    Every backend serves this surface. The facade adds /api/v1/facade/state and
+    /api/v1/facade/rollout, which are not part of the backend contract.
+servers:
+  - url: http://localhost/api/v1
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      security: []
+      responses:
+        "200":
+          description: Process is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Identity"
+  /readyz:
+    get:
+      operationId: readyz
+      security: []
+      responses:
+        "200":
+          description: Dependencies answered.
+        "503":
+          description: A dependency is down.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /version:
+    get:
+      operationId: version
+      security: []
+      responses:
+        "200":
+          description: Build identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Identity"
+  /api/v1/dashboard:
+    get:
+      operationId: getDashboard
+      responses:
+        "200":
+          description: Market snapshot object from the serving bucket.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/status:
+    get:
+      operationId: getStatus
+      responses:
+        "200":
+          description: Feed status object from the serving bucket.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/chart/{ticker}:
+    get:
+      operationId: getChart
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Chart payload for one ticker.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: Unknown ticker.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+  /api/v1/prefs:
+    get:
+      operationId: getPrefs
+      responses:
+        "200":
+          description: Projected preferences for the caller.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prefs"
+    put:
+      operationId: putPrefs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Prefs"
+      responses:
+        "200":
+          description: Preferences after the field-level write.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Prefs"
+        "409":
+          description: Version conflict.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Identity:
+      type: object
+      required: [status, backend, lang, runtime, color, version, data_version]
+      properties:
+        status: { type: string }
+        backend: { type: string, enum: [gcp-go, aws-python, azure-dotnet] }
+        lang: { type: string, enum: [go, python, dotnet] }
+        runtime: { type: string }
+        color: { type: string, enum: [blue, green] }
+        version: { type: string }
+        data_version: { type: string }
+    Prefs:
+      type: object
+      required: [tickers, pinned, display, version]
+      properties:
+        tickers:
+          type: array
+          maxItems: 25
+          items: { type: string }
+        pinned:
+          type: array
+          maxItems: 6
+          items: { type: string }
+        display:
+          type: object
+          additionalProperties: true
+          properties:
+            theme: { type: string }
+            time_zone: { type: string }
+            updown_palette: { type: string }
+            chart_period: { type: string }
+        chart_settings:
+          type: object
+          additionalProperties: { type: object, additionalProperties: true }
+        version: { type: integer }
+        updated_at: { type: string }
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+security:
+  - bearerAuth: []

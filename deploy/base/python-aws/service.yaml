@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-aws
+spec:
+  selector:
+    app: python-aws
+    version: blue
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-aws-preview
+spec:
+  selector:
+    app: python-aws
+    version: green
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080

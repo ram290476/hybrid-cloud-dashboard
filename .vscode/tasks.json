@@ -1,0 +1,10 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "test", "type": "shell", "command": "make test", "group": "test" },
+    { "label": "demo", "type": "shell", "command": "make demo", "isBackground": true },
+    { "label": "dev-token", "type": "shell", "command": "make dev-token" },
+    { "label": "terraform-validate", "type": "shell", "command": "make terraform-validate" },
+    { "label": "local-seed", "type": "shell", "command": "make local-seed" }
+  ]
+}

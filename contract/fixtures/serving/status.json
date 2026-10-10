@@ -1,0 +1,8 @@
+{
+  "service": "dashboard-api",
+  "data_version": "fixture-2026.10.09",
+  "generated_at": "2026-10-09T22:00:00Z",
+  "jobs": [
+    {"name": "prices_daily", "status": "ok", "last_run": "2026-10-09T21:00:00Z"}
+  ]
+}
