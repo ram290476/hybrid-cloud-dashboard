@@ -12,7 +12,7 @@ test-go:
 	cd sync && go test ./...
 
 test-python:
-	python3 -m pytest backends/python-aws/tests -q
+	python3 -m pytest backends/python-aws/tests scripts/test_local_seed.py -q
 
 test-dotnet:
 	$(DOTNET) test backends/dotnet-azure/tests/DashboardApi.Tests/DashboardApi.Tests.csproj --nologo
