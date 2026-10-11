@@ -13,6 +13,7 @@ spec:
       containers:
       - name: firestore
         image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+        command: ["gcloud"]
         args: ["beta", "emulators", "firestore", "start", "--host-port=0.0.0.0:8080", "--project=hcd-local"]
         env:
         - name: CLOUDSDK_CORE_PROJECT
