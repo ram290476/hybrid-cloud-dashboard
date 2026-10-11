@@ -1,4 +1,4 @@
-.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate cluster-up cluster-down local-seed pf-emulators sync-status lint
+.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate cluster-up cluster-down local-seed pf-emulators pf-gateway sync-status lint
 
 export PATH := $(HOME)/.dotnet:$(PATH)
 DOTNET ?= dotnet
@@ -72,6 +72,9 @@ pf-emulators:
 	kubectl -n hcd-deps port-forward svc/dynamodb 8000:8000 &
 	kubectl -n hcd-deps port-forward svc/firestore 8787:8080 &
 	kubectl -n hcd-deps port-forward svc/cosmos 18081:8081 18080:8080 11234:1234 &
+
+pf-gateway:
+	kubectl -n hcd port-forward svc/$$(kubectl -n hcd get svc -l gateway.envoyproxy.io/owning-gateway-name=hcd -o jsonpath='{.items[0].metadata.name}') 8088:80
 
 lint:
 	gofmt -w libs facade backends/go-gcp sync

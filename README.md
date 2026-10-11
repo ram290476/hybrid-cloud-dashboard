@@ -64,6 +64,14 @@ make contract-test
 
 `make cluster-up` is safe to re-run when the cluster already exists. `make cluster-down` deletes the kind cluster and the `kind-registry` container.
 
+kind does not implement Service type LoadBalancer. The Envoy proxy Service is NodePort `30080`, and `deploy/local/kind-config.yaml` publishes that on the Mac as port 80, so `http://127.0.0.1/` is the Gateway. A cluster created before that mapping does not pick it up until `make cluster-down && make cluster-up`. Until then, or if port 80 is already taken:
+
+```bash
+make pf-gateway
+```
+
+That forwards the Envoy Service in namespace `hcd` to `127.0.0.1:8088`. Tilt's facade forward on 8080 skips the Gateway.
+
 `make pf-emulators` forwards host ports that stay off the process-mode API ports (facade 8080, Go 8081, Python 8082, .NET 8083):
 
 | Service | Host | In cluster |
