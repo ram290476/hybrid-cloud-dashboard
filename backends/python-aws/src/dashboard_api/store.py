@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Protocol
+
+from dashboard_api.merge import merge_docs
 
 
 class Store(Protocol):
@@ -76,25 +79,50 @@ class S3Dynamo:
         self.s3.put_object(Bucket=self.bucket, Key=key, Body=body)
 
     def get_prefs(self, sub: str) -> bytes:
-        if self.dynamo:
-            item = self.dynamo.get_item(TableName=self.table, Key={"user_sub": {"S": sub}})
-            if "Item" in item:
-                return item["Item"]["doc"]["S"].encode()
+        # hcd-sync writes the merged document to the object store only.
+        # DynamoDB is a local mirror and must not hide that object. When both
+        # exist, field-level HLC merge matches the other two backends.
+        docs: list[dict] = []
         if self.s3:
-            try:
-                obj = self.s3.get_object(Bucket=self.bucket, Key=f"prefs/{sub}.json")
-                return obj["Body"].read()
-            except Exception as exc:
-                code = getattr(getattr(exc, "response", {}), "get", lambda *_: {})("Error", {}).get("Code")
-                if code not in ("NoSuchKey", "404", None):
-                    raise
+            raw = self._s3_prefs(sub)
+            if raw is not None:
+                docs.append(json.loads(raw))
+        if self.dynamo:
+            raw = self._dynamo_prefs(sub)
+            if raw is not None:
+                docs.append(json.loads(raw))
+        if docs:
+            return json.dumps(merge_docs(docs)).encode()
         return self.memory.get_prefs(sub)
 
+    def _s3_prefs(self, sub: str) -> bytes | None:
+        try:
+            obj = self.s3.get_object(Bucket=self.bucket, Key=f"prefs/{sub}.json")
+            return obj["Body"].read()
+        except Exception as exc:
+            if _missing(exc):
+                return None
+            raise
+
+    def _dynamo_prefs(self, sub: str) -> bytes | None:
+        item = self.dynamo.get_item(TableName=self.table, Key={"user_sub": {"S": sub}})
+        if "Item" not in item:
+            return None
+        return item["Item"]["doc"]["S"].encode()
+
     def put_prefs(self, sub: str, body: bytes) -> None:
-        # Object copy is what hcd-sync merges. DynamoDB is the request-path KV when the emulator is up.
+        # Object copy is what hcd-sync merges. DynamoDB stays a mirror of that document.
         if self.s3:
             self.s3.put_object(Bucket=self.bucket, Key=f"prefs/{sub}.json", Body=body)
         if self.dynamo:
             self.dynamo.put_item(TableName=self.table, Item={"user_sub": {"S": sub}, "doc": {"S": body.decode()}})
             return
         self.memory.put_prefs(sub, body)
+
+
+def _missing(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if isinstance(response, dict):
+        code = response.get("Error", {}).get("Code")
+        return code in ("NoSuchKey", "404", "NoSuchBucket", "NotFound")
+    return False
