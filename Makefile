@@ -1,4 +1,4 @@
-.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate cluster-up local-seed pf-emulators sync-status lint
+.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate cluster-up cluster-down local-seed pf-emulators sync-status lint
 
 export PATH := $(HOME)/.dotnet:$(PATH)
 DOTNET ?= dotnet
@@ -43,11 +43,27 @@ terraform-validate:
 	done
 
 cluster-up:
-	kind create cluster --name hcd --config deploy/local/kind-config.yaml
-	docker start kind-registry >/dev/null 2>&1 || docker run -d --name kind-registry --restart=always -p 5001:5000 registry:2
-	docker network connect kind kind-registry >/dev/null 2>&1 || true
-	helm install eg oci://docker.io/envoyproxy/gateway-helm -n envoy-gateway-system --create-namespace || true
+	@if ! docker inspect kind-registry >/dev/null 2>&1; then \
+	  docker run -d --name kind-registry --restart=always -p 127.0.0.1:5001:5000 registry:2; \
+	else \
+	  docker start kind-registry >/dev/null; \
+	fi
+	@if kind get clusters 2>/dev/null | grep -qx hcd; then \
+	  echo "kind cluster hcd already exists; leaving it in place"; \
+	else \
+	  kind create cluster --name hcd --config deploy/local/kind-config.yaml; \
+	fi
+	@docker network connect kind kind-registry >/dev/null 2>&1 || true
+	@for node in $$(kind get nodes --name hcd); do \
+	  docker exec "$$node" mkdir -p /etc/containerd/certs.d/localhost:5001; \
+	  printf '%s\n' '[host."http://kind-registry:5000"]' | docker exec -i "$$node" cp /dev/stdin /etc/containerd/certs.d/localhost:5001/hosts.toml; \
+	done
+	helm upgrade --install eg oci://docker.io/envoyproxy/gateway-helm --namespace envoy-gateway-system --create-namespace
 	kubectl apply -k deploy/overlays/local
+
+cluster-down:
+	kind delete cluster --name hcd || true
+	docker rm -f kind-registry || true
 
 pf-emulators:
 	kubectl -n hcd-deps port-forward svc/minio 9000:9000 &
