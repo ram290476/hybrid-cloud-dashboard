@@ -12,7 +12,7 @@ spec:
     spec:
       containers:
       - name: cosmos
-        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest
         env:
         - name: PROTOCOL
           value: https
