@@ -54,8 +54,8 @@ pf-emulators:
 	kubectl -n hcd-deps port-forward svc/fake-gcs 4443:4443 &
 	kubectl -n hcd-deps port-forward svc/azurite 10000:10000 &
 	kubectl -n hcd-deps port-forward svc/dynamodb 8000:8000 &
-	kubectl -n hcd-deps port-forward svc/firestore 8080:8080 &
-	kubectl -n hcd-deps port-forward svc/cosmos 8081:8081 8082:8080 1234:1234 &
+	kubectl -n hcd-deps port-forward svc/firestore 8787:8080 &
+	kubectl -n hcd-deps port-forward svc/cosmos 18081:8081 18080:8080 11234:1234 &
 
 lint:
 	gofmt -w libs facade backends/go-gcp sync
