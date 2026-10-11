@@ -21,7 +21,7 @@ test-node:
 	node --test frontend/*.test.js
 
 dev-token:
-	python3 scripts/dev_token.py
+	@python3 scripts/dev_token.py
 
 contract-test:
 	python3 scripts/contract-test.py
@@ -33,7 +33,7 @@ local-seed:
 	python3 scripts/local-seed.py
 
 sync-status:
-	cd sync && HCD_SYNC_ONCE=1 go run ./cmd/hcd-sync -once
+	@set -a && . ./scripts/hcd-sync-env.sh && set +a && cd sync && HCD_SYNC_ONCE=1 go run ./cmd/hcd-sync -once
 
 terraform-validate:
 	@set -e; for dir in infra/terraform/gcp infra/terraform/aws infra/terraform/azure infra/terraform/cloudflare infra/terraform/aws/modules/lambda-url infra/terraform/labs/eks infra/terraform/labs/aks infra/terraform/labs/gke; do \
