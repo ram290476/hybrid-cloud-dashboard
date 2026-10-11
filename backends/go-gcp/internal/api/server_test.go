@@ -2,11 +2,14 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -104,6 +107,62 @@ func call(t *testing.T, srv *Server, method, path, token string, body []byte) *h
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)
 	return rec
+}
+
+func TestGCSObjectUsesRequestContext(t *testing.T) {
+	var hits int
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Context() == nil {
+			t.Error("request context is nil")
+		}
+		if r.Method == http.MethodGet && strings.Contains(r.URL.RawPath+r.URL.Path, "serving") {
+			w.Header().Set("content-type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer fake.Close()
+	srv, token := newServer(t)
+	srv.Store = store.GCS{Host: fake.URL, Bucket: "hcd-serving"}
+	rec := call(t, srv, http.MethodGet, "/api/v1/status", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	if hits == 0 {
+		t.Fatal("fake-gcs received no request; a nil context never leaves the client")
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ok"`) {
+		t.Fatalf("body %s", rec.Body.String())
+	}
+}
+
+func TestPrefsReadErrorDoesNotOverwrite(t *testing.T) {
+	srv, token := newServer(t)
+	broken := &failPrefs{Store: srv.Store}
+	srv.Store = broken
+	rec := call(t, srv, http.MethodGet, "/api/v1/prefs", token, nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	if broken.puts != 0 {
+		t.Fatalf("PutPrefs called %d times; a read error must not seed defaults", broken.puts)
+	}
+}
+
+type failPrefs struct {
+	store.Store
+	puts int
+}
+
+func (f *failPrefs) GetPrefs(context.Context, string) ([]byte, error) {
+	return nil, errors.New("object store unavailable")
+}
+
+func (f *failPrefs) PutPrefs(context.Context, string, []byte) error {
+	f.puts++
+	return nil
 }
 
 func jsonEqual(a, b []byte) bool {

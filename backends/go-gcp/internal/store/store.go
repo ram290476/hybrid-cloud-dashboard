@@ -3,12 +3,17 @@ package store
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sync"
 )
+
+// ErrNotFound is a missing object or prefs document. Callers may seed defaults
+// only for this error. A transport or auth failure must not look like "no prefs yet".
+var ErrNotFound = errors.New("not found")
 
 // Store is the snapshot plus prefs contract every backend implements.
 // Object keys live in the serving/ and reference/ prefixes. Prefs are the
@@ -39,7 +44,7 @@ func (m *Memory) GetObject(_ context.Context, key string) ([]byte, error) {
 	defer m.mu.Unlock()
 	body, ok := m.objs[key]
 	if !ok {
-		return nil, fmt.Errorf("missing object %s", key)
+		return nil, fmt.Errorf("missing object %s: %w", key, ErrNotFound)
 	}
 	return append([]byte(nil), body...), nil
 }
@@ -56,7 +61,7 @@ func (m *Memory) GetPrefs(_ context.Context, sub string) ([]byte, error) {
 	defer m.mu.Unlock()
 	body, ok := m.prefs[sub]
 	if !ok {
-		return nil, fmt.Errorf("missing prefs %s", sub)
+		return nil, fmt.Errorf("missing prefs %s: %w", sub, ErrNotFound)
 	}
 	return append([]byte(nil), body...), nil
 }
@@ -102,7 +107,7 @@ func (g GCS) GetObject(ctx context.Context, key string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("missing object %s", key)
+		return nil, fmt.Errorf("missing object %s: %w", key, ErrNotFound)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 300 {

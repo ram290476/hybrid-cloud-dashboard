@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -71,14 +72,14 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, start time.Time) {
 	}
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/status":
-		s.object(w, "serving/status.json")
+		s.object(w, r, "serving/status.json")
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/dashboard":
-		s.object(w, "serving/dashboard.json")
+		s.object(w, r, "serving/dashboard.json")
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/chart/"):
 		ticker := strings.TrimPrefix(r.URL.Path, "/api/v1/chart/")
-		s.object(w, "serving/chart/"+ticker+".json")
+		s.object(w, r, "serving/chart/"+ticker+".json")
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/prefs":
-		s.getPrefs(w, sub)
+		s.getPrefs(w, r, sub)
 	case r.Method == http.MethodPut && r.URL.Path == "/api/v1/prefs":
 		s.putPrefs(w, r, sub)
 	default:
@@ -87,10 +88,14 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, start time.Time) {
 	s.log(r, start)
 }
 
-func (s *Server) object(w http.ResponseWriter, key string) {
-	body, err := s.Store.GetObject(nil, key)
+func (s *Server) object(w http.ResponseWriter, r *http.Request, key string) {
+	body, err := s.Store.GetObject(r.Context(), key)
 	if err != nil {
-		writeProblem(w, http.StatusNotFound, err.Error())
+		status := http.StatusBadGateway
+		if errors.Is(err, store.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeProblem(w, status, err.Error())
 		return
 	}
 	w.Header().Set("content-type", "application/json")
@@ -98,8 +103,8 @@ func (s *Server) object(w http.ResponseWriter, key string) {
 	_, _ = w.Write(body)
 }
 
-func (s *Server) getPrefs(w http.ResponseWriter, sub string) {
-	doc, err := s.load(sub)
+func (s *Server) getPrefs(w http.ResponseWriter, r *http.Request, sub string) {
+	doc, err := s.load(r.Context(), sub)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, err.Error())
 		return
@@ -114,7 +119,7 @@ func (s *Server) putPrefs(w http.ResponseWriter, r *http.Request, sub string) {
 		writeProblem(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	doc, err := s.load(sub)
+	doc, err := s.load(r.Context(), sub)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, err.Error())
 		return
@@ -133,9 +138,12 @@ func (s *Server) putPrefs(w http.ResponseWriter, r *http.Request, sub string) {
 	writeJSON(w, http.StatusOK, merge.Project(next))
 }
 
-func (s *Server) load(sub string) (merge.Doc, error) {
-	raw, err := s.Store.GetPrefs(nil, sub)
+func (s *Server) load(ctx context.Context, sub string) (merge.Doc, error) {
+	raw, err := s.Store.GetPrefs(ctx, sub)
 	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return merge.Doc{}, err
+		}
 		doc := merge.EmptyDoc(sub)
 		doc.Fields["display.theme"] = mustScalar("industrial-dark", 1, "seed")
 		doc.Fields["display.time_zone"] = mustScalar("America/New_York", 1, "seed")
@@ -146,7 +154,9 @@ func (s *Server) load(sub string) (merge.Doc, error) {
 		doc.Pinned.Adds["seed-tsla"] = merge.Add{Value: "TSLA", HLC: merge.HLC{WallMs: 1, Origin: "seed"}}
 		doc.Pinned.Adds["seed-spcx"] = merge.Add{Value: "SPCX", HLC: merge.HLC{WallMs: 2, Origin: "seed"}}
 		encoded, _ := json.Marshal(doc)
-		_ = s.Store.PutPrefs(nil, sub, encoded)
+		if err := s.Store.PutPrefs(ctx, sub, encoded); err != nil {
+			return merge.Doc{}, err
+		}
 		return doc, nil
 	}
 	var doc merge.Doc
