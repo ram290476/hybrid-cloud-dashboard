@@ -189,7 +189,7 @@ export function fundamentalSummary(id, chartData, through) {
   const row = fundamentalObservation(id, chartData, through);
   if (!row) return "not available";
   const value = row.unit === "ratio" ? `${(Number(row.value) * 100).toFixed(1)}%`
-    : row.unit === "USD" ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(row.value)
+    : row.unit === "USD" ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(row.value)
     : Number(row.value).toLocaleString("en-US");
   return `${value}${row.fiscal_quarter ? ` · ${row.fiscal_quarter}` : ""}`;
 }
