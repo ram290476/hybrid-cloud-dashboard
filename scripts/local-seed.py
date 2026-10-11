@@ -42,21 +42,33 @@ AZURITE_ACCOUNT = "devstoreaccount1"
 AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
 
-def _azure(method: str, endpoint: str, account: str, key_b64: str, body: bytes, blob: bool, query: list[tuple[str, str]]) -> None:
+def _shared_key(method: str, account: str, key_b64: str, path: str, query: list[tuple[str, str]], body: bytes, blob: bool) -> dict[str, str]:
+    """Shared Key for the Azurite path-style URL.
+
+    Since API version 2015-02-21 a Content-Length of 0 is an empty field in the
+    string-to-sign. The path already starts with /<account>, so the account is
+    not prefixed again. Content-Type is set explicitly because urllib would
+    otherwise add application/x-www-form-urlencoded without it being signed.
+    """
     date = formatdate(timeval=datetime.now(timezone.utc).timestamp(), usegmt=True)
-    length = str(len(body)) if method == "PUT" else ""
-    canon = [f"x-ms-date:{date}", "x-ms-version:2020-10-02"]
-    headers = {"x-ms-date": date, "x-ms-version": "2020-10-02"}
+    content_type = "application/octet-stream"
+    length = "" if len(body) == 0 else str(len(body))
+    ms = {"x-ms-date": date, "x-ms-version": "2020-10-02"}
     if blob:
-        canon.insert(0, "x-ms-blob-type:BlockBlob")
-        headers["x-ms-blob-type"] = "BlockBlob"
-    parsed = urllib.parse.urlsplit(endpoint)
-    resource = "/" + account + parsed.path
+        ms["x-ms-blob-type"] = "BlockBlob"
+    canon = "\n".join(f"{name}:{ms[name]}" for name in sorted(ms))
+    resource = path if path.startswith("/") else "/" + path
     if query:
-        resource += "\n" + "\n".join(f"{k}:{v}" for k, v in sorted(query))
-    to_sign = method + "\n\n\n" + length + "\n\n\n\n\n\n\n\n\n" + "\n".join(canon) + "\n" + resource
+        resource += "\n" + "\n".join(f"{key}:{value}" for key, value in sorted(query))
+    to_sign = f"{method}\n\n\n{length}\n\n{content_type}\n\n\n\n\n\n\n{canon}\n{resource}"
     sig = base64.b64encode(hmac.new(base64.b64decode(key_b64), to_sign.encode(), hashlib.sha256).digest()).decode()
-    headers["authorization"] = f"SharedKey {account}:{sig}"
+    headers = {"Content-Type": content_type, "Authorization": f"SharedKey {account}:{sig}", **ms}
+    return headers
+
+
+def _azure(method: str, endpoint: str, account: str, key_b64: str, body: bytes, blob: bool, query: list[tuple[str, str]]) -> None:
+    parsed = urllib.parse.urlsplit(endpoint)
+    headers = _shared_key(method, account, key_b64, parsed.path, query, body, blob)
     req = urllib.request.Request(endpoint, data=body if method == "PUT" else None, method=method, headers=headers)
     try:
         urllib.request.urlopen(req, timeout=5)
