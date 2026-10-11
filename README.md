@@ -32,12 +32,16 @@ Section 11 of the architecture copies `apps/web` as zero-build ES modules. The m
 
 ## Run locally
 
-Process mode (no cluster). Needs Go, Python 3.12, and the .NET 10 SDK.
+Process mode (no cluster). Needs Go, Python 3.12 or 3.13, and the .NET 10 SDK. A Mac system Python 3.14 does not have these packages. Use [uv](https://docs.astral.sh/uv/) with 3.13 (`backends/python-aws/.python-version`):
 
 ```bash
-python3 -m pip install fastapi uvicorn boto3 pytest httpx
+uv python install 3.13
+uv venv --python 3.13
+uv pip install fastapi uvicorn boto3 pytest httpx
 make demo
 ```
+
+`make test` uses whichever `python3` is on `PATH`. Point that at the 3.13 venv before running it. CI installs the same packages on Python 3.12.
 
 Open http://127.0.0.1:8080/hybrid.html . The facade probes the three APIs, routes `/api`, and prints one JSON audit line per request. `DEV_INJECT_TOKEN=1` lets the browser call the API with the local HMAC issuer `http://localhost/dev-auth`.
 
@@ -46,17 +50,38 @@ make dev-token
 make test
 ```
 
+`make dev-token` prints only the token.
+
 Kind on the Mac mini (OrbStack, cluster name `hcd`, registry `localhost:5001`):
 
 ```bash
 make cluster-up          # kind + local registry + Envoy Gateway + kubectl apply -k deploy/overlays/local
 make pf-emulators
-make local-seed
+make local-seed          # sets dummy AWS creds itself and seeds fake-gcs, SeaweedFS, DynamoDB, and Azurite
 tilt up
 make contract-test
 ```
 
-Emulators live in `hcd-deps`: SeaweedFS (S3; the Service is also named `minio` so `aws --endpoint-url http://localhost:9000` still works), fake-gcs-server, Azurite, DynamoDB Local, the Firestore emulator, and the Cosmos emulator vNext. MinIO is not used; it no longer publishes a prebuilt image.
+`make cluster-up` is safe to re-run when the cluster already exists. `make cluster-down` deletes the kind cluster and the `kind-registry` container.
+
+`make pf-emulators` forwards host ports that stay off the process-mode API ports (facade 8080, Go 8081, Python 8082, .NET 8083):
+
+| Service | Host | In cluster |
+| --- | --- | --- |
+| SeaweedFS (`svc/minio`) | 9000 | 9000 |
+| fake-gcs | 4443 | 4443 |
+| Azurite | 10000 | 10000 |
+| DynamoDB Local | 8000 | 8000 |
+| Firestore emulator | 8787 | 8080 |
+| Cosmos gateway / health / explorer | 18081 / 18080 / 11234 | 8081 / 8080 / 1234 |
+
+`make sync-status` sources `scripts/hcd-sync-env.sh` before the one-shot sync.
+
+Emulators live in `hcd-deps`: SeaweedFS (S3). The Deployment is `seaweedfs`; Services are `seaweedfs` and `minio` (the alias setup-plan commands use). fake-gcs-server, Azurite, DynamoDB Local, the Firestore emulator, and the Cosmos emulator `vnext-latest` (linux/arm64 and amd64). MinIO is not used.
+
+Local Kubernetes names are not the cloud names. Deployments are `go-gcp-blue`, `python-aws-blue`, and `dotnet-azure-blue` (green deployments exist at 0 replicas). Services are `go-gcp`, `python-aws`, and `dotnet-azure`, so `kubectl exec deploy/python-aws` does not match; use `deploy/python-aws-blue`. ECS service names in Terraform stay `py-api-blue` and `py-api-green`.
+
+The Go pods set `STORAGE_EMULATOR_HOST` and `FIRESTORE_EMULATOR_HOST` (host `firestore.hcd-deps.svc.cluster.local:8080`). The Python pods set `AWS_ENDPOINT_URL_S3` to `http://minio.hcd-deps.svc.cluster.local:9000`. The .NET pods set `AZURE_STORAGE_CONNECTION` and the same value as `Storage__ConnectionString` (the API reads either). They also set `Cosmos__Endpoint`, `Cosmos__Database`, and `Cosmos__Container` so a setup-plan `printenv` sees them. The Cosmos client is not wired; prefs stay on the blob `prefs/<sub>.json`.
 
 `hcd-sync` polls the three object stores for `prefs/<sub>.json` and merges with the shared Go library. On the Mac:
 
@@ -90,7 +115,7 @@ Auth in the cloud is a new Cognito pool in a new AWS account. `AUTH_MODE=cognito
 ## What is stubbed
 
 - Cognito JWKS validation. The dev HMAC token is the working local issuer.
-- Firestore, Cosmos query, and DynamoDB are not the sync transport. Each backend mirrors the prefs document to `prefs/<sub>.json` in its object store, and `hcd-sync` merges those objects. Python still writes DynamoDB when `AWS_ENDPOINT_URL_DYNAMODB` is set.
+- Firestore, Cosmos query, and DynamoDB are not the sync transport. Each backend reads and writes the prefs document at `prefs/<sub>.json` in its object store, and `hcd-sync` merges those objects. Python also mirrors that document in DynamoDB. A read merges the object and the Dynamo row with the same field-level HLC rules, so a stale Dynamo item cannot hide the synced object. `Cosmos__*` on the .NET Deployment is present for local inspection only.
 - OpenTelemetry SDKs are not linked into the three processes yet. JSON logs and the response headers (`x-backend-env`, `x-backend-lang`, `x-backend-runtime`, `x-app-color`, `x-app-version`, `x-data-version`) are. The collector and Grafana LGTM manifests are in `deploy/overlays/local/observability`. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector when the SDK lands. Grafana Cloud stays the free-tier destination for real accounts.
 - .NET Native AOT (`Dockerfile.aot`) is not the local image. Local kind uses the JIT SDK image, per section 9.4.2.
 - The Lambda URL module under `infra/terraform/aws/modules/lambda-url` is not called by the AWS root.

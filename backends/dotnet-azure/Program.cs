@@ -24,7 +24,10 @@ foreach (var key in new[] { "serving/dashboard.json", "serving/status.json", "se
     var path = Path.Combine(fixtures, key.Replace('/', Path.DirectorySeparatorChar));
     if (File.Exists(path)) await memory.PutObject(key, await File.ReadAllBytesAsync(path));
 }
-IStore store = new BlobMemoryStore(memory, Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION"), Env("BLOB_CONTAINER", "hcd-serving"));
+var storageConnection = Environment.GetEnvironmentVariable("AZURE_STORAGE_CONNECTION");
+if (string.IsNullOrEmpty(storageConnection))
+    storageConnection = Environment.GetEnvironmentVariable("Storage__ConnectionString");
+IStore store = new BlobMemoryStore(memory, storageConnection, Env("BLOB_CONTAINER", "hcd-serving"));
 
 app.Use(async (ctx, next) =>
 {

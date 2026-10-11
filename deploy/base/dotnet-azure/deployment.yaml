@@ -37,6 +37,14 @@ spec:
           value: "local-dev-secret-change-me"
         - name: AZURE_STORAGE_CONNECTION
           value: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite.hcd-deps.svc.cluster.local:10000/devstoreaccount1;"
+        - name: Storage__ConnectionString
+          value: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite.hcd-deps.svc.cluster.local:10000/devstoreaccount1;"
+        - name: Cosmos__Endpoint
+          value: "https://cosmos.hcd-deps.svc.cluster.local:8081"
+        - name: Cosmos__Database
+          value: "hcd"
+        - name: Cosmos__Container
+          value: "prefs"
         - name: BLOB_CONTAINER
           value: "hcd-serving"
         - name: APP_COLOR
@@ -92,6 +100,14 @@ spec:
           value: "local-dev-secret-change-me"
         - name: AZURE_STORAGE_CONNECTION
           value: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite.hcd-deps.svc.cluster.local:10000/devstoreaccount1;"
+        - name: Storage__ConnectionString
+          value: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite.hcd-deps.svc.cluster.local:10000/devstoreaccount1;"
+        - name: Cosmos__Endpoint
+          value: "https://cosmos.hcd-deps.svc.cluster.local:8081"
+        - name: Cosmos__Database
+          value: "hcd"
+        - name: Cosmos__Container
+          value: "prefs"
         - name: BLOB_CONTAINER
           value: "hcd-serving"
         - name: APP_COLOR
