@@ -406,7 +406,7 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	}
 	sub := s.subject(r)
 	var chosen string
-	if route.Affinity.HashOn == "jwt_sub" && sub != "" {
+	if stickyHash(route.Affinity.HashOn) && sub != "" {
 		chosen = policy.ChooseSticky(weights, sub)
 	} else {
 		u := unit()
@@ -655,6 +655,10 @@ func (s *Server) pushAudit(record Audit) {
 	line, _ := json.Marshal(record)
 	// Stdout is the shipping path. Fluent Bit or the collector tails it in the cluster.
 	println(string(line))
+}
+
+func stickyHash(hashOn string) bool {
+	return hashOn == "jwt_sub" || hashOn == "jwt-sub"
 }
 
 func (s *Server) subject(r *http.Request) string {
