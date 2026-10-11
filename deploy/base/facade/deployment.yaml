@@ -24,6 +24,8 @@ spec:
           value: /policy/routing-policy.kind.yaml
         - name: DEV_INJECT_TOKEN
           value: "1"
+        - name: FRONTEND_DIR
+          value: /frontend
         - name: DEV_JWT_SECRET
           value: local-dev-secret-change-me
         - name: AUDIT_IP_SALT
