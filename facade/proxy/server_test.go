@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/policy"
+	"github.com/ram290476/hybrid-cloud-dashboard/libs/devjwt"
 )
 
 func testDoc(urls ...string) policy.Document {
@@ -122,5 +124,43 @@ func TestRetryIdempotentGetNotPost(t *testing.T) {
 	if rec.Code == 200 {
 		body, _ := io.ReadAll(rec.Body)
 		t.Fatalf("POST must not retry onto a healthy backend, body %s", body)
+	}
+}
+
+func TestStickyAcceptsJwtSubHyphen(t *testing.T) {
+	a := backend("go", "blue", false)
+	b := backend("python", "green", false)
+	defer a.Close()
+	defer b.Close()
+	doc := testDoc(a.URL, b.URL)
+	doc.Spec.Routes[0].Match.PathPrefix = "/api/v1/prefs"
+	doc.Spec.Routes[0].Affinity.HashOn = "jwt-sub"
+	srv := New(doc, "c0ffee")
+	secret := "local-dev-secret-change-me"
+	srv.DevSecret = secret
+	weights := map[string]int{"gcp-go": 50, "aws-python": 50}
+	srv.mu.Lock()
+	srv.weights["/api/v1/prefs"] = weights
+	srv.mu.Unlock()
+	now := time.Unix(1_700_000_000, 0)
+	srv.Now = func() time.Time { return now }
+	token, err := devjwt.Mint(secret, devjwt.Claims{
+		Sub: "user-1", Iss: srv.Issuer, Aud: srv.Audience, Iat: now.Unix(), Exp: now.Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/prefs", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+	}
+	want := policy.ChooseSticky(weights, "user-1")
+	got := rec.Header().Get("x-backend-lang")
+	expect := map[string]string{"gcp-go": "go", "aws-python": "python"}[want]
+	if got != expect {
+		t.Fatalf("jwt-sub sticky chose lang %q, want %s (%s)", got, expect, want)
 	}
 }
