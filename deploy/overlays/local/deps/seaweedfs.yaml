@@ -29,15 +29,36 @@ spec:
       containers:
       - name: seaweedfs
         image: chrislusf/seaweedfs:3.80
-        args: ["server", "-s3", "-s3.port=9000", "-s3.config=/etc/seaweed/s3.json", "-dir=/data", "-ip=0.0.0.0", "-ip.bind=0.0.0.0"]
+        args:
+        - server
+        - -s3
+        - -s3.port=9000
+        - -s3.config=/etc/seaweed/s3.json
+        - -dir=/data
+        - -ip=0.0.0.0
+        - -ip.bind=0.0.0.0
+        # Default volume size is 1 GiB and weed preallocates several of them.
+        # 64 MiB x 8 volumes stays under the emptyDir cap on a small Mac disk.
+        - -master.volumeSizeLimitMB=64
+        - -volume.max=8
         ports:
         - containerPort: 9000
           name: s3
         - containerPort: 9333
           name: master
+        resources:
+          requests:
+            memory: 128Mi
+            ephemeral-storage: 256Mi
+          limits:
+            memory: 512Mi
+            ephemeral-storage: 1Gi
         volumeMounts:
         - name: s3
           mountPath: /etc/seaweed
+          readOnly: true
+        - name: data
+          mountPath: /data
         readinessProbe:
           tcpSocket: { port: 9000 }
           periodSeconds: 5
@@ -45,6 +66,9 @@ spec:
       - name: s3
         configMap:
           name: seaweedfs-s3
+      - name: data
+        emptyDir:
+          sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: Service
