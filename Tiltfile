@@ -33,3 +33,12 @@ docker_build(
 k8s_yaml(kustomize("deploy/overlays/local"))
 k8s_resource("facade", port_forwards = "8080:8080")
 k8s_resource("lgtm", port_forwards = "3000:3000", extra_pod_selectors = [{"app": "lgtm"}])
+# Green stays at 0 replicas until a color flip. tilt ci must not wait for those pods.
+k8s_resource("go-gcp-green", pod_readiness = "ignore")
+k8s_resource("python-aws-green", pod_readiness = "ignore")
+k8s_resource("dotnet-azure-green", pod_readiness = "ignore")
+local_resource(
+    "hcd-sync",
+    cmd = "bash -c 'set -a; source scripts/hcd-sync-env.sh; set +a; cd sync && HCD_SYNC_ONCE=1 go run ./cmd/hcd-sync -once'",
+    deps = ["sync", "libs/merge", "scripts/hcd-sync-env.sh"],
+)
