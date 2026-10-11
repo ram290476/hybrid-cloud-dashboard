@@ -38,7 +38,7 @@ sync-status:
 terraform-validate:
 	@set -e; for dir in infra/terraform/gcp infra/terraform/aws infra/terraform/azure infra/terraform/cloudflare infra/terraform/aws/modules/lambda-url infra/terraform/labs/eks infra/terraform/labs/aks infra/terraform/labs/gke; do \
 	  echo "== $$dir"; \
-	  terraform -chdir=$$dir init -backend=false -input=false >/tmp/hcd-tf-init.log; \
+	  terraform -chdir=$$dir init -backend=false -input=false -lockfile=readonly >/tmp/hcd-tf-init.log; \
 	  terraform -chdir=$$dir validate; \
 	done
 
