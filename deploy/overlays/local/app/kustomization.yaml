@@ -12,6 +12,6 @@ resources:
 configMapGenerator:
   - name: facade-policy
     files:
-      - routing-policy.kind.yaml=../../../../facade/policy/routing-policy.kind.yaml
+      - routing-policy.kind.yaml
 generatorOptions:
   disableNameSuffixHash: true
