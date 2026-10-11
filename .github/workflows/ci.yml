@@ -3,6 +3,12 @@ name: ci
 on:
   push:
   pull_request:
+    # PR #1 targets main. Fix PRs target the unmerged integration branch, which
+    # is not the default branch, so the base has to be listed or Actions skips them.
+    branches:
+      - main
+      - cursor/hybrid-cloud-v2-4a4d
+      - "cursor/**"
 
 permissions:
   contents: read
