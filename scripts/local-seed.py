@@ -42,22 +42,26 @@ AZURITE_ACCOUNT = "devstoreaccount1"
 AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
 
-def _shared_key(method: str, account: str, key_b64: str, path: str, query: list[tuple[str, str]], body: bytes, blob: bool) -> dict[str, str]:
+def _shared_key(method: str, account: str, key_b64: str, path: str, query: list[tuple[str, str]], body: bytes, blob: bool, date: str | None = None) -> dict[str, str]:
     """Shared Key for the Azurite path-style URL.
 
     Since API version 2015-02-21 a Content-Length of 0 is an empty field in the
-    string-to-sign. The path already starts with /<account>, so the account is
-    not prefixed again. Content-Type is set explicitly because urllib would
-    otherwise add application/x-www-form-urlencoded without it being signed.
+    string-to-sign. Path-style URLs already start with /<account>. Azurite still
+    canonicalizes the resource as /<account> plus that path, so the account
+    appears twice (the same string the Azure SDKs sign). Content-Type is set
+    explicitly because urllib would otherwise add
+    application/x-www-form-urlencoded without it being signed.
     """
-    date = formatdate(timeval=datetime.now(timezone.utc).timestamp(), usegmt=True)
+    if date is None:
+        date = formatdate(timeval=datetime.now(timezone.utc).timestamp(), usegmt=True)
     content_type = "application/octet-stream"
     length = "" if len(body) == 0 else str(len(body))
     ms = {"x-ms-date": date, "x-ms-version": "2020-10-02"}
     if blob:
         ms["x-ms-blob-type"] = "BlockBlob"
     canon = "\n".join(f"{name}:{ms[name]}" for name in sorted(ms))
-    resource = path if path.startswith("/") else "/" + path
+    resource_path = path if path.startswith("/") else "/" + path
+    resource = "/" + account + resource_path
     if query:
         resource += "\n" + "\n".join(f"{key}:{value}" for key, value in sorted(query))
     to_sign = f"{method}\n\n\n{length}\n\n{content_type}\n\n\n\n\n\n\n{canon}\n{resource}"
