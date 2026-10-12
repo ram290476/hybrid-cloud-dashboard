@@ -62,9 +62,40 @@ class S3Dynamo:
 
     def ready(self) -> None:
         if self.s3:
-            self.s3.head_bucket(Bucket=self.bucket)
+            self._ensure_bucket()
         if self.dynamo:
+            self._ensure_table()
+
+    def _ensure_bucket(self) -> None:
+        try:
+            self.s3.head_bucket(Bucket=self.bucket)
+            return
+        except Exception as exc:
+            if not _absent(exc):
+                raise
+        try:
+            self.s3.create_bucket(Bucket=self.bucket)
+        except Exception as exc:
+            if not _already_exists(exc):
+                raise
+
+    def _ensure_table(self) -> None:
+        try:
             self.dynamo.describe_table(TableName=self.table)
+            return
+        except Exception as exc:
+            if not _absent(exc):
+                raise
+        try:
+            self.dynamo.create_table(
+                TableName=self.table,
+                AttributeDefinitions=[{"AttributeName": "user_sub", "AttributeType": "S"}],
+                KeySchema=[{"AttributeName": "user_sub", "KeyType": "HASH"}],
+                BillingMode="PAY_PER_REQUEST",
+            )
+        except Exception as exc:
+            if not _already_exists(exc):
+                raise
 
     def get_object(self, key: str) -> bytes:
         if not self.s3:
@@ -120,9 +151,20 @@ class S3Dynamo:
         self.memory.put_prefs(sub, body)
 
 
-def _missing(exc: Exception) -> bool:
+def _error_code(exc: Exception) -> str:
     response = getattr(exc, "response", None)
     if isinstance(response, dict):
-        code = response.get("Error", {}).get("Code")
-        return code in ("NoSuchKey", "404", "NoSuchBucket", "NotFound")
-    return False
+        return str(response.get("Error", {}).get("Code", ""))
+    return ""
+
+
+def _missing(exc: Exception) -> bool:
+    return _error_code(exc) in ("NoSuchKey", "404", "NoSuchBucket", "NotFound")
+
+
+def _absent(exc: Exception) -> bool:
+    return _error_code(exc) in ("NoSuchKey", "404", "NoSuchBucket", "NotFound", "ResourceNotFoundException")
+
+
+def _already_exists(exc: Exception) -> bool:
+    return _error_code(exc) in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists", "ResourceInUseException")
