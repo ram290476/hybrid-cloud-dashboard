@@ -70,7 +70,7 @@ kind does not implement Service type LoadBalancer. The Envoy proxy Service is No
 make pf-gateway
 ```
 
-That forwards the Envoy Service in namespace `hcd` to `127.0.0.1:8088`. Tilt's facade forward on 8080 skips the Gateway.
+That forwards the Envoy Service in namespace `envoy-gateway-system` (Envoy Gateway creates it there, not in `hcd`) to `127.0.0.1:8088`. Tilt's facade forward on 8080 skips the Gateway.
 
 `make pf-emulators` forwards host ports that stay off the process-mode API ports (facade 8080, Go 8081, Python 8082, .NET 8083):
 
