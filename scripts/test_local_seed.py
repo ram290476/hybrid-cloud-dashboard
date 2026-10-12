@@ -27,7 +27,10 @@ def _expected(method: str, path: str, query: str, headers, key_b64: str, account
     content_type = headers.get("Content-Type", "")
     ms = sorted((name.lower(), value) for name, value in headers.items() if name.lower().startswith("x-ms-"))
     canon = "\n".join(f"{name}:{value}" for name, value in ms)
-    resource = path
+    # Azurite path-style rule, independent of local-seed._shared_key: the
+    # canonical resource is /<account> plus the URI path, so the account is
+    # present twice. A signer that uses the URI path alone gets 403.
+    resource = "/" + account + path
     if query:
         pairs = sorted(part.split("=", 1) for part in query.split("&"))
         resource += "\n" + "\n".join(f"{key}:{value}" for key, value in pairs)
@@ -73,6 +76,39 @@ def test_azurite_signature_accepts_container_and_blob():
         server.shutdown()
     assert len(_Store.seen) == 2
     assert all(ok for _, ok, _, _ in _Store.seen), _Store.seen
+    assert _Store.seen[0][0].split("?", 1)[0] == f"/{seed.AZURITE_ACCOUNT}/hcd-serving"
+    assert _Store.seen[1][0].split("?", 1)[0] == f"/{seed.AZURITE_ACCOUNT}/hcd-serving/serving/status.json"
     assert _Store.seen[0][2] == "application/octet-stream"
     assert _Store.seen[0][3] == "0"
     assert _Store.seen[1][3] == "11"
+
+
+def test_path_style_string_to_sign_prefixes_the_account_twice():
+    """Known vector: empty body, fixed date, path-style container create.
+
+    The signed resource is /devstoreaccount1/devstoreaccount1/hcd-serving.
+    The HTTP path stays /devstoreaccount1/hcd-serving. This literal is the
+    Azurite rule; it is not built by _shared_key.
+    """
+    date = "Fri, 26 Jun 2015 23:39:12 GMT"
+    string_to_sign = (
+        "PUT\n\n\n\n\napplication/octet-stream\n\n\n\n\n\n\n"
+        "x-ms-date:Fri, 26 Jun 2015 23:39:12 GMT\n"
+        "x-ms-version:2020-10-02\n"
+        "/devstoreaccount1/devstoreaccount1/hcd-serving\n"
+        "restype:container"
+    )
+    sig = base64.b64encode(hmac.new(base64.b64decode(seed.AZURITE_KEY), string_to_sign.encode(), hashlib.sha256).digest()).decode()
+    headers = seed._shared_key(
+        "PUT",
+        seed.AZURITE_ACCOUNT,
+        seed.AZURITE_KEY,
+        "/devstoreaccount1/hcd-serving",
+        [("restype", "container")],
+        b"",
+        False,
+        date=date,
+    )
+    assert headers["Authorization"] == f"SharedKey {seed.AZURITE_ACCOUNT}:{sig}"
+    assert headers["Content-Type"] == "application/octet-stream"
+    assert "Content-Length" not in headers
