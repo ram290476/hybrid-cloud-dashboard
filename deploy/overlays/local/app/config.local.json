@@ -1,0 +1,4 @@
+{
+  "apiBaseUrl": "/api/v1",
+  "authMode": "dev"
+}

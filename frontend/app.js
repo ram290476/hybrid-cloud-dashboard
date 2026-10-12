@@ -34,6 +34,7 @@ import {
 } from "./stock-page.js";
 import { curveView, fomcView, policyPathView } from "./rates-panel.js";
 import { clockDelay, headerDate, marketLabel } from "./market-status.js";
+import { missingConfigKeys, usesDevAuth } from "./runtime-config.js";
 import {
   CHART_LANES,
   OVERLAYS,
@@ -131,9 +132,7 @@ function schedulePanelSave() {
       root.querySelector("[data-panel-save-error]")?.remove();
     }).catch((error) => {
       if (error.status === 401) {
-        settings.close();
-        session.accessToken = null;
-        showGate("Your session expired", "Sign in again to continue to your private dashboard.", "", true);
+        showExpiredSession();
         return;
       }
       session.panelSaveError = error.message;
@@ -175,6 +174,22 @@ function selectedChartBars(tickerData) {
 
 function apiUrl(path) {
   return `${session.config.apiBaseUrl.replace(/\/+$/, "")}/${path}`;
+}
+
+function showExpiredSession() {
+  settings.close();
+  session.accessToken = null;
+  if (usesDevAuth(session.config)) {
+    showGate("Dashboard could not load", "The local API rejected the dev session. The facade should be running with DEV_INJECT_TOKEN=1.", "");
+    return;
+  }
+  showGate("Your session expired", "Sign in again to continue to your private dashboard.", "", true);
+}
+
+function apiHeaders(extra = {}) {
+  const headers = { Accept: "application/json", ...extra };
+  if (!usesDevAuth(session.config) && session.accessToken) headers.Authorization = `Bearer ${session.accessToken}`;
+  return headers;
 }
 
 function showGate(title, message, error = "", showSignIn = false) {
@@ -286,6 +301,10 @@ function signOut() {
   session.accessToken = null;
   session.prefs = null;
   session.dashboard = null;
+  if (usesDevAuth(session.config)) {
+    location.assign("/");
+    return;
+  }
   const logout = new URL("/logout", session.config.cognitoDomain);
   logout.search = new URLSearchParams({
     client_id: session.config.clientId,
@@ -299,10 +318,7 @@ async function apiGet(path) {
   let response;
   try {
     response = await fetch(apiUrl(path), {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        Accept: "application/json",
-      },
+      headers: apiHeaders(),
       cache: "no-store",
     });
   } catch (cause) {
@@ -316,11 +332,7 @@ async function putPrefs(candidate) {
   try {
     response = await fetch(apiUrl("prefs"), {
       method: "PUT",
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers: apiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(candidate),
     });
   } catch (cause) {
@@ -355,9 +367,7 @@ async function loadChartData(ticker, force = false) {
     session.chartData[ticker] = null;
     session.chartDataError[ticker] = error.message;
     if (error.status === 401) {
-      settings.close();
-      session.accessToken = null;
-      showGate("Your session expired", "Sign in again to continue to your private dashboard.", "", true);
+      showExpiredSession();
       return;
     }
   }
@@ -376,9 +386,7 @@ async function loadStockPage(ticker, force = false) {
     session.stockPageState[ticker] = "error";
     session.stockPage[ticker] = null;
     if (error.status === 401) {
-      settings.close();
-      session.accessToken = null;
-      showGate("Your session expired", "Sign in again to continue to your private dashboard.", "", true);
+      showExpiredSession();
       return;
     }
   }
@@ -3014,9 +3022,7 @@ async function refreshData(showLoading) {
     .filter((result) => result.status === "rejected")
     .forEach((result) => console.error("Dashboard refresh failed:", result.reason));
   if (outcome.unauthorized) {
-    settings.close();
-    session.accessToken = null;
-    showGate("Your session expired", "Sign in again to continue to your private dashboard.", "", true);
+    showExpiredSession();
     return;
   }
   session.dashboardError = outcome.dashboardError;
@@ -3036,25 +3042,26 @@ async function start() {
     return;
   }
 
-  const required = ["apiBaseUrl", "cognitoDomain", "clientId"];
-  const missing = required.filter((key) => !loadedConfig[key] || loadedConfig[key].includes("your-"));
+  const missing = missingConfigKeys(loadedConfig);
   if (missing.length) {
     showGate("Dashboard is not configured", "The application is deployed, but its public runtime configuration is incomplete.", `Missing: ${missing.join(", ")}`);
     return;
   }
   session.config = loadedConfig;
 
-  try {
-    await completeSignIn();
-  } catch (error) {
-    history.replaceState({}, "", location.pathname);
-    showGate("Sign-in failed", "Your Cognito session could not be established.", error.message, true);
-    return;
-  }
+  if (!usesDevAuth(loadedConfig)) {
+    try {
+      await completeSignIn();
+    } catch (error) {
+      history.replaceState({}, "", location.pathname);
+      showGate("Sign-in failed", "Your Cognito session could not be established.", error.message, true);
+      return;
+    }
 
-  if (!session.accessToken) {
-    showGate("Your market data, at a glance", "Sign in with your invited Cognito account to view the dashboard and manage your watchlist.", "", true);
-    return;
+    if (!session.accessToken) {
+      showGate("Your market data, at a glance", "Sign in with your invited Cognito account to view the dashboard and manage your watchlist.", "", true);
+      return;
+    }
   }
 
   try {
@@ -3082,10 +3089,10 @@ async function start() {
     await refreshData(false);
   } catch (error) {
     if (error.status === 401) {
-      showGate("Your session expired", "Sign in again to continue to your private dashboard.", "", true);
+      showExpiredSession();
       return;
     }
-    showGate("Dashboard could not load", "The preferences service did not return your account settings.", error.message, true);
+    showGate("Dashboard could not load", "The preferences service did not return your account settings.", error.message, !usesDevAuth(session.config));
   }
 }
 
@@ -3099,9 +3106,7 @@ const settings = createAccountSettings({
     refreshData(false);
   },
   onUnauthorized: () => {
-    settings.close();
-    session.accessToken = null;
-    showGate("Your session expired", "Sign in again to continue to your private dashboard.", "", true);
+    showExpiredSession();
   },
   onSaveError: (message, reopen) => {
     session.settingsError = { message, reopen };

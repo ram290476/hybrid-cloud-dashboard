@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  template:
+    spec:
+      containers:
+      - name: frontend
+        volumeMounts:
+        - name: frontend-config
+          mountPath: /usr/share/nginx/html/config.json
+          subPath: config.json
+          readOnly: true
+      volumes:
+      - name: frontend-config
+        configMap:
+          name: frontend-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: facade
+spec:
+  template:
+    spec:
+      containers:
+      - name: facade
+        volumeMounts:
+        - name: frontend-config
+          mountPath: /frontend/config.json
+          subPath: config.json
+          readOnly: true
+      volumes:
+      - name: frontend-config
+        configMap:
+          name: frontend-config

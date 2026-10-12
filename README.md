@@ -68,7 +68,7 @@ The Go and Python `/readyz` probes create the GCS bucket, the S3 bucket, and the
 
 `make cluster-up` is safe to re-run when the cluster already exists. `make cluster-down` deletes the kind cluster and the `kind-registry` container.
 
-kind does not implement Service type LoadBalancer. The Envoy proxy Service is NodePort `30080`, and `deploy/local/kind-config.yaml` publishes that on the Mac as port 80, so `http://127.0.0.1/` is the Gateway. A cluster created before that mapping does not pick it up until `make cluster-down && make cluster-up`. Until then, or if port 80 is already taken:
+kind does not implement Service type LoadBalancer. The Envoy proxy Service is NodePort `30080`, and `deploy/local/kind-config.yaml` publishes that on the Mac as port 80, so `http://127.0.0.1/` is the Gateway and the market dashboard. The local overlay mounts `deploy/overlays/local/app/config.local.json` as `/config.json` on the frontend and the facade: `apiBaseUrl` is `/api/v1` (same origin) and `authMode` is `dev`, so the page does not use Cognito. The facade injects the local HMAC token when the browser sends no `Authorization` header. `/hybrid.html` on Tilt's port 8080 is the routing page. A missing `/config.json` is a 404, not the HTML shell. A cluster created before the port mapping does not pick it up until `make cluster-down && make cluster-up`. Until then, or if port 80 is already taken:
 
 ```bash
 make pf-gateway
