@@ -9,9 +9,14 @@ resources:
   - ../../../base/facade
   - ../../../base/frontend
   - gateway.yaml
+patches:
+  - path: frontend-config-patch.yaml
 configMapGenerator:
   - name: facade-policy
     files:
       - routing-policy.kind.yaml
+  - name: frontend-config
+    files:
+      - config.json=config.local.json
 generatorOptions:
   disableNameSuffixHash: true
