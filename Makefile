@@ -74,7 +74,7 @@ pf-emulators:
 	kubectl -n hcd-deps port-forward svc/cosmos 18081:8081 18080:8080 11234:1234 &
 
 pf-gateway:
-	kubectl -n hcd port-forward svc/$$(kubectl -n hcd get svc -l gateway.envoyproxy.io/owning-gateway-name=hcd -o jsonpath='{.items[0].metadata.name}') 8088:80
+	kubectl -n envoy-gateway-system port-forward svc/$$(kubectl -n envoy-gateway-system get svc -l gateway.envoyproxy.io/owning-gateway-name=hcd -o jsonpath='{.items[0].metadata.name}') 8088:80
 
 lint:
 	gofmt -w libs facade backends/go-gcp sync
