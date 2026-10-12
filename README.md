@@ -56,11 +56,15 @@ Kind on the Mac mini (OrbStack, cluster name `hcd`, registry `localhost:5001`):
 
 ```bash
 make cluster-up          # kind + local registry + Envoy Gateway + kubectl apply -k deploy/overlays/local
+tilt up                  # wait until the emulators and the blue APIs are up
 make pf-emulators
 make local-seed          # sets dummy AWS creds itself and seeds fake-gcs, SeaweedFS, DynamoDB, and Azurite
-tilt up
 make contract-test
 ```
+
+`tilt up` re-applies the local manifests and recreates the `hcd-deps` pods. Those emulators keep data in memory or on an emptyDir, so a seed that ran before Tilt is wiped, and `make pf-emulators` forwards bound to the old pods stop. Seed only after Tilt has created the emulator pods. If a later Tilt restart rolls those pods, run `make pf-emulators` and `make local-seed` again.
+
+The Go and Python `/readyz` probes create the GCS bucket, the S3 bucket, and the DynamoDB prefs table when they are missing, the same way the .NET probe creates its blob container. That lets the APIs become Ready on a fresh emulator. Fixture objects still come from `make local-seed`.
 
 `make cluster-up` is safe to re-run when the cluster already exists. `make cluster-down` deletes the kind cluster and the `kind-registry` container.
 

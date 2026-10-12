@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -90,10 +91,35 @@ func (g GCS) Ready(ctx context.Context) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return g.ensureBucket(ctx)
+	}
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("gcs status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (g GCS) ensureBucket(ctx context.Context) error {
+	payload, err := json.Marshal(map[string]string{"name": g.Bucket})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.url("/storage/v1/b?project=hcd-local"), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("content-type", "application/json")
+	resp, err := g.client().Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusConflict || resp.StatusCode < 300 {
+		return nil
+	}
+	raw, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("gcs create bucket %d %s", resp.StatusCode, raw)
 }
 
 func (g GCS) GetObject(ctx context.Context, key string) ([]byte, error) {
