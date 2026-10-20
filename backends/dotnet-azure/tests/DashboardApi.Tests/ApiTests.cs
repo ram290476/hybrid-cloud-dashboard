@@ -34,12 +34,29 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     {
         var current = JsonNode.Parse(await (await _client.GetAsync("/api/v1/prefs")).Content.ReadAsStringAsync())!.AsObject();
         current["display"]!["theme"] = "charting-navy";
+        current["display"]!["panel_mode"] = "all";
+        current["chart_settings"] = new JsonObject
+        {
+            ["TSLA"] = new JsonObject
+            {
+                ["overlays"] = new JsonArray("MA20"),
+                ["lanes"] = new JsonArray("VOL"),
+            },
+        };
         var saved = await _client.PutAsync("/api/v1/prefs", new StringContent(current.ToJsonString(), System.Text.Encoding.UTF8, "application/json"));
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
         var body = JsonNode.Parse(await saved.Content.ReadAsStringAsync())!;
         Assert.Equal("charting-navy", body["display"]!["theme"]!.GetValue<string>());
+        Assert.Equal("all", body["display"]!["panel_mode"]!.GetValue<string>());
         Assert.Equal("America/New_York", body["display"]!["time_zone"]!.GetValue<string>());
+        Assert.Equal("MA20", body["chart_settings"]!["TSLA"]!["overlays"]![0]!.GetValue<string>());
         Assert.Contains("TSLA", body["tickers"]!.AsArray().Select(n => n!.GetValue<string>()));
+        body["chart_settings"] = new JsonObject();
+        var cleared = await _client.PutAsync("/api/v1/prefs", new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+        var after = JsonNode.Parse(await cleared.Content.ReadAsStringAsync())!;
+        Assert.Empty(after["chart_settings"]!.AsObject());
+        Assert.Equal("all", after["display"]!["panel_mode"]!.GetValue<string>());
     }
 
     [Fact]

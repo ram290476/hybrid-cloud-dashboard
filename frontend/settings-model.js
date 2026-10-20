@@ -10,8 +10,14 @@ export const SETTINGS_TABS = [
   { id: "tickers", label: "My tickers" },
   { id: "theme", label: "Theme & display" },
   { id: "profile", label: "Profile & time zone" },
-  { id: "refresh", label: "Data refresh" },
 ];
+
+// Admin-only tab (issue 223). Shown only when the caller is an admin (never the demo account).
+export const ADMIN_TAB = { id: "admin", label: "Admin" };
+
+export function settingsTabs(admin = false) {
+  return admin ? [...SETTINGS_TABS, ADMIN_TAB] : SETTINGS_TABS;
+}
 
 export const PALETTES = [
   { id: "theme", label: "Theme default" },
@@ -40,10 +46,13 @@ function clone(prefs) {
   };
 }
 
-/** "#settings/theme" -> "theme"; unknown tabs fall back to My tickers; other hashes -> null. */
+/** "#settings/theme" -> "theme". "#settings/refresh" opens the data refresh pop-up.
+ * Unknown tabs fall back to My tickers. Other hashes return null. */
 export function parseSettingsHash(hash) {
   const match = /^#settings(?:\/([a-z-]*))?$/.exec(String(hash || ""));
   if (!match) return null;
+  if (match[1] === "refresh") return "refresh";
+  if (match[1] === ADMIN_TAB.id) return ADMIN_TAB.id; // the pop-up falls back to My tickers for non-admins
   return SETTINGS_TABS.some((tab) => tab.id === match[1]) ? match[1] : "tickers";
 }
 
@@ -52,8 +61,8 @@ export function settingsHash(tabId) {
 }
 
 /** Next tab for the WAI-ARIA tabs keyboard pattern (arrows wrap, Home/End jump). */
-export function tabAfterKey(currentId, key) {
-  const ids = SETTINGS_TABS.map((tab) => tab.id);
+export function tabAfterKey(currentId, key, tabs = SETTINGS_TABS) {
+  const ids = tabs.map((tab) => tab.id);
   const index = Math.max(0, ids.indexOf(currentId));
   if (key === "ArrowRight") return ids[(index + 1) % ids.length];
   if (key === "ArrowLeft") return ids[(index - 1 + ids.length) % ids.length];
@@ -145,17 +154,35 @@ export function fallbackSelection(prefs, selected) {
   return prefs.pinned?.[0] || prefs.tickers?.[0] || null;
 }
 
-/** Email claim from a Cognito ID token (display only; the API never trusts this). */
-export function emailFromIdToken(idToken) {
+const DEMO_METRIC_ADMIN = "ram.vellamsetti@gmail.com";
+
+/** JWT payload for display only. The API checks the Cognito group itself. */
+export function jwtClaims(token) {
   try {
-    const payload = String(idToken || "").split(".")[1];
+    const payload = String(token || "").split(".")[1];
     if (!payload) return null;
     const base64 = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payload.length / 4) * 4, "=");
     const claims = JSON.parse(globalThis.atob(base64));
-    return typeof claims.email === "string" ? claims.email : null;
+    return claims && typeof claims === "object" ? claims : null;
   } catch {
     return null;
   }
+}
+
+/** Email claim from a Cognito ID token (display only; the API never trusts this). */
+export function emailFromIdToken(idToken) {
+  const email = jwtClaims(idToken)?.email;
+  return typeof email === "string" ? email : null;
+}
+
+/** True when the access token's Cognito groups include admin. The public demo account is never an admin. */
+export function canApproveMetrics(accessToken, email = "") {
+  const claims = jwtClaims(accessToken) || {};
+  const identities = [email, claims.email, claims.username, claims["cognito:username"]];
+  if (identities.some((value) => String(value || "").trim().toLowerCase() === DEMO_METRIC_ADMIN)) return false;
+  const groups = claims["cognito:groups"];
+  const list = Array.isArray(groups) ? groups : String(groups || "").split(/[\s,]+/);
+  return list.some((group) => String(group).replace(/[[\]"]/g, "").trim() === "admin");
 }
 
 /** Per-ticker history status for a just-added ticker (#33 adds a richer pipeline status later). */
@@ -172,34 +199,39 @@ export function timeZoneLabel(zone) {
 export const PANEL_IDS = [
   "rates", "inflation", "market-comparison", "moving-averages", "volatility",
   "dollar-oil", "tariffs", "correlation", "catalyst-calendar", "company",
-  "contracts", "about-data",
+  "contracts", "about-data", "news", "filings-events",
 ];
 
-const DEFAULT_OPEN_PANELS = new Set(["rates", "inflation", "moving-averages", "company"]);
+const PANEL_STATES = new Set(["open", "closed", "dismissed"]);
+const DEFAULT_OPEN_PANELS = new Set(["rates", "inflation", "moving-averages", "company", "news", "filings-events"]);
 
-/** Keep known ids with an open/closed value. Unknown ids and other values are dropped. */
+/** Keep known ids with an open, closed, or dismissed value. Unknown ids and other values are dropped. */
 export function normalizePanels(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const panels = {};
   for (const [id, value] of Object.entries(raw)) {
-    if (!PANEL_IDS.includes(id) || (value !== "open" && value !== "closed")) continue;
+    if (!PANEL_IDS.includes(id) || !PANEL_STATES.has(value)) continue;
     panels[id] = value;
   }
   return panels;
 }
 
+export function panelState(panels, id) {
+  return normalizePanels(panels)[id] || "";
+}
+
 export function isPanelOpen(panels, id) {
-  const saved = normalizePanels(panels)[id];
+  const saved = panelState(panels, id);
   if (saved === "open") return true;
-  if (saved === "closed") return false;
+  if (saved === "closed" || saved === "dismissed") return false;
   return DEFAULT_OPEN_PANELS.has(id);
 }
 
-/** Next saved map after the user opens or closes one drawer. Unknown ids are ignored. */
+/** Next saved map after the user opens, closes, or dismisses one drawer. Unknown ids are ignored. */
 export function withPanelState(panels, id, open) {
   const next = normalizePanels(panels);
   if (!PANEL_IDS.includes(id)) return next;
-  next[id] = open ? "open" : "closed";
+  next[id] = open === "dismissed" ? "dismissed" : open ? "open" : "closed";
   return next;
 }
 
@@ -214,6 +246,21 @@ export function drawerControls(id, open) {
     chevron: "▸",
     cue: expanded ? "Hide" : "Show",
   };
+}
+
+const RAN_STATUSES = ["ok", "partial", "failed", "skipped"];
+
+/** Last-run copy. A job that has not run yet is waiting, not missing data. Null means format last_run. */
+export function lastRunLabel(job) {
+  if (!RAN_STATUSES.includes(job?.status)) return "Waiting for first run";
+  return null;
+}
+
+/** Next-run copy. A timestamp wins. Otherwise the event trigger, or an em dash when neither exists. */
+export function nextRunLabel(job) {
+  if (job?.next_run) return { kind: "time" };
+  if (job?.trigger) return { kind: "event", text: String(job.trigger) };
+  return { kind: "none", text: "—" };
 }
 
 /** Data refresh summary for the account button and menu. */
