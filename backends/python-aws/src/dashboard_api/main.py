@@ -206,9 +206,18 @@ async def put_prefs(request: Request) -> Response:
     wall = int(time.time() * 1000)
     stamp = {"wall_ms": wall, "counter": 0, "origin": APP_BACKEND}
     display = incoming.get("display") or {}
-    for key in ("theme", "time_zone", "updown_palette", "chart_period", "panels"):
+    for key in ("theme", "time_zone", "updown_palette", "chart_period", "panels", "panel_mode"):
         if key in display and display[key] != current["display"].get(key):
             doc["fields"][f"display.{key}"] = {"value": display[key], "hlc": stamp}
+    if isinstance(incoming.get("chart_settings"), dict):
+        incoming_charts = incoming["chart_settings"]
+        current_charts = current.get("chart_settings") or {}
+        for ticker, settings in incoming_charts.items():
+            if settings != current_charts.get(ticker):
+                doc["fields"][f"chart.{ticker}"] = {"value": settings, "hlc": stamp}
+        for ticker in current_charts:
+            if ticker not in incoming_charts:
+                doc["fields"][f"chart.{ticker}"] = {"value": None, "hlc": stamp, "tombstone": True}
     _apply_set(doc["tickers"], current["tickers"], incoming.get("tickers") or [], stamp)
     _apply_set(doc["pinned"], current["pinned"], incoming.get("pinned") or [], stamp)
     store.put_prefs(guard, json.dumps(doc).encode())

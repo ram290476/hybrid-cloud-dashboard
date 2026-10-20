@@ -333,7 +333,7 @@ func ApplyPublic(doc Doc, incoming Public, stamp HLC) (Doc, error) {
 	current := Project(doc)
 	doc.Version++
 	if incoming.Display != nil {
-		for _, key := range []string{"theme", "time_zone", "updown_palette", "chart_period", "panels"} {
+		for _, key := range []string{"theme", "time_zone", "updown_palette", "chart_period", "panels", "panel_mode"} {
 			next, ok := incoming.Display[key]
 			if !ok {
 				continue

@@ -26,12 +26,21 @@ def test_prefs_keeps_unrelated_field():
     client = TestClient(app)
     current = client.get("/api/v1/prefs", headers=HEADERS).json()
     current["display"]["theme"] = "charting-navy"
+    current["display"]["panel_mode"] = "all"
+    current["chart_settings"] = {"TSLA": {"overlays": ["MA20"], "lanes": ["VOL"]}}
     saved = client.put("/api/v1/prefs", headers=HEADERS, json=current)
     assert saved.status_code == 200
     body = saved.json()
     assert body["display"]["theme"] == "charting-navy"
+    assert body["display"]["panel_mode"] == "all"
     assert body["display"]["time_zone"] == "America/New_York"
+    assert body["chart_settings"]["TSLA"]["overlays"] == ["MA20"]
     assert "TSLA" in body["tickers"]
+    body["chart_settings"] = {}
+    cleared = client.put("/api/v1/prefs", headers=HEADERS, json=body)
+    assert cleared.status_code == 200
+    assert cleared.json()["chart_settings"] == {}
+    assert cleared.json()["display"]["panel_mode"] == "all"
 
 
 def test_merge_vectors():

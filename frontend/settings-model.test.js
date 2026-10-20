@@ -7,6 +7,7 @@ import {
   PANEL_IDS,
   PIN_LIMIT_MESSAGE,
   addTicker,
+  canApproveMetrics,
   canRemove,
   drawerControls,
   emailFromIdToken,
@@ -15,12 +16,16 @@ import {
   isPanelOpen,
   moveTicker,
   normalizePanels,
+  panelState,
   parseSettingsHash,
+  lastRunLabel,
+  nextRunLabel,
   refreshSummary,
   removeTicker,
   restoreTicker,
   stripOrder,
   tabAfterKey,
+  settingsTabs,
   togglePin,
   validateNewTicker,
   withPanelState,
@@ -41,12 +46,16 @@ test("deep links open the matching tab and unknown tabs fall back to My tickers"
 
 test("tab keys wrap with arrows and jump with Home/End", () => {
   assert.equal(tabAfterKey("tickers", "ArrowRight"), "theme");
-  assert.equal(tabAfterKey("profile", "ArrowRight"), "refresh");
-  assert.equal(tabAfterKey("tickers", "ArrowLeft"), "refresh");
+  assert.equal(tabAfterKey("profile", "ArrowRight"), "tickers");
+  assert.equal(tabAfterKey("tickers", "ArrowLeft"), "profile");
   assert.equal(tabAfterKey("theme", "Home"), "tickers");
-  assert.equal(tabAfterKey("tickers", "End"), "refresh");
-  assert.equal(tabAfterKey("refresh", "ArrowRight"), "tickers");
+  assert.equal(tabAfterKey("tickers", "End"), "profile");
+  assert.equal(tabAfterKey("profile", "ArrowLeft"), "theme");
   assert.equal(tabAfterKey("tickers", "a"), null);
+  // Admins get the Admin tab last; it is in the arrow-key cycle only for them.
+  assert.equal(tabAfterKey("profile", "ArrowRight", settingsTabs(true)), "admin");
+  assert.equal(tabAfterKey("admin", "ArrowRight", settingsTabs(true)), "tickers");
+  assert.deepEqual(settingsTabs(false).map((t) => t.id), ["tickers", "theme", "profile"]);
 });
 
 test("new tickers are validated for format, duplicates and the cap", () => {
@@ -124,6 +133,24 @@ test("a removed selection falls back to the first pin, then the first ticker", (
   assert.equal(fallbackSelection(prefs(["A", "B"]), null), "A");
 });
 
+function accessToken(claims) {
+  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
+  return `header.${payload}.sig`;
+}
+
+test("only a non-demo admin group can approve company metrics", () => {
+  const admin = accessToken({ "cognito:groups": ["admin"], username: "owner@example.com" });
+  assert.equal(canApproveMetrics(admin, "owner@example.com"), true);
+  assert.equal(canApproveMetrics(accessToken({ "cognito:groups": "admin" })), true);
+  assert.equal(canApproveMetrics(accessToken({ "cognito:groups": "[admin]" })), true);
+  assert.equal(canApproveMetrics(accessToken({ username: "owner@example.com" })), false);
+  const demo = "ram.vellamsetti@gmail.com";
+  assert.equal(canApproveMetrics(accessToken({ "cognito:groups": ["admin"], username: demo }), demo), false);
+  assert.equal(canApproveMetrics(accessToken({ "cognito:groups": "admin", email: demo })), false);
+  assert.equal(canApproveMetrics(accessToken({ "cognito:groups": ["admin"], "cognito:username": demo })), false);
+  assert.equal(canApproveMetrics(admin, demo), false);
+});
+
 test("the email claim is read from the ID token payload", () => {
   const payload = Buffer.from(JSON.stringify({ email: "investor@example.com", sub: "abc" })).toString("base64url");
   assert.equal(emailFromIdToken(`h.${payload}.s`), "investor@example.com");
@@ -135,6 +162,23 @@ test("history state reports loading until a new ticker has price history", () =>
   assert.equal(historyState(undefined, false), "unknown");
   assert.equal(historyState(undefined, true), "loading");
   assert.equal(historyState({ price_history: [{ date: "2026-10-06", close: 1 }] }, true), "ready");
+});
+
+test("data refresh labels name the trigger and a first run that has not happened", () => {
+  assert.deepEqual(nextRunLabel({ next_run: "2026-10-08T13:35:00Z", trigger: null }), { kind: "time" });
+  assert.deepEqual(nextRunLabel({ next_run: "2026-10-08T13:35:00Z", trigger: "ignored" }), { kind: "time" });
+  assert.deepEqual(nextRunLabel({ next_run: null, trigger: "When a ticker is added" }), {
+    kind: "event",
+    text: "When a ticker is added",
+  });
+  assert.deepEqual(nextRunLabel({ next_run: null, trigger: null }), { kind: "none", text: "—" });
+  assert.deepEqual(nextRunLabel({}), { kind: "none", text: "—" });
+  assert.equal(lastRunLabel({ status: "never_run", last_run: null }), "Waiting for first run");
+  assert.equal(lastRunLabel({}), "Waiting for first run");
+  assert.equal(lastRunLabel({ status: "ok", last_run: "2026-10-07T20:45:00Z" }), null);
+  assert.equal(lastRunLabel({ status: "partial", last_run: "2026-10-07T20:45:00Z" }), null);
+  assert.equal(lastRunLabel({ status: "skipped", last_run: "2026-10-07T20:45:00Z" }), null);
+  assert.equal(JSON.stringify(nextRunLabel({ trigger: "When a ticker is added" })).includes("not scheduled"), false);
 });
 
 test("refresh summary counts ok jobs and flags partial or failed ones", () => {
@@ -157,10 +201,11 @@ test("panel drawer state round-trips and keeps defaults for unsaved ids", () => 
     "not-a-panel": "open",
     volatility: "wide-open",
     company: "open",
+    news: "dismissed",
   });
-  assert.deepEqual(saved, { rates: "closed", company: "open" });
+  assert.deepEqual(saved, { rates: "closed", company: "open", news: "dismissed" });
   const again = normalizePanels(JSON.parse(JSON.stringify({ ...saved, tariffs: "closed" })));
-  assert.deepEqual(again, { rates: "closed", company: "open", tariffs: "closed" });
+  assert.deepEqual(again, { rates: "closed", company: "open", news: "dismissed", tariffs: "closed" });
   assert.equal(isPanelOpen(again, "rates"), false);
   assert.equal(isPanelOpen(again, "inflation"), true);
   assert.equal(isPanelOpen(again, "moving-averages"), true);
@@ -169,7 +214,18 @@ test("panel drawer state round-trips and keeps defaults for unsaved ids", () => 
     assert.equal(isPanelOpen({}, id), false, id);
   }
   assert.equal(isPanelOpen(again, "tariffs"), false);
-  assert.deepEqual(PANEL_IDS.filter((id) => isPanelOpen({}, id)), ["rates", "inflation", "moving-averages", "company"]);
+  assert.equal(isPanelOpen(again, "news"), false);
+  assert.deepEqual(PANEL_IDS.filter((id) => isPanelOpen({}, id)), ["rates", "inflation", "moving-averages", "company", "news", "filings-events"]);
+});
+
+test("dismissed panels stay dismissed until the user restores them", () => {
+  let panels = withPanelState({}, "rates", "dismissed");
+  assert.equal(panelState(panels, "rates"), "dismissed");
+  assert.equal(isPanelOpen(panels, "rates"), false);
+  panels = withPanelState(panels, "rates", true);
+  assert.equal(panelState(panels, "rates"), "open");
+  assert.equal(isPanelOpen(panels, "rates"), true);
+  assert.equal(panelState(withPanelState(panels, "nope", "dismissed"), "nope"), "");
 });
 
 test("drawer toggle updates one panel and exposes the collapsed ARIA state", () => {

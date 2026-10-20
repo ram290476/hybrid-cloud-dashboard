@@ -19,6 +19,9 @@ test-dotnet:
 
 test-node:
 	node --test frontend/*.test.js
+	@set -e; for f in frontend/*.js frontend/*.mjs; do \
+	  case "$$f" in *.test.js) ;; *) node --check "$$f" ;; esac; \
+	done
 
 dev-token:
 	@python3 scripts/dev_token.py

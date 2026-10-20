@@ -1,8 +1,9 @@
-// Account menu and the tabbed Account settings dialog (issue #36). Every user setting lives here:
-// My tickers (add, pin, reorder, remove), Theme & display, Profile & time zone, Data refresh.
-// Changes apply at once and autosave through PUT /prefs, one request at a time.
+// Account menu, the Settings pop-up, and the separate Data refresh pop-up.
+// Settings holds My tickers, Theme & display, Profile & time zone, and (admins only) Admin.
+// Data refresh is its own larger pop-up. Changes autosave through PUT /prefs.
 
 import { PERIODS, isNumericValue, sessionReturn, validBars } from "./chart-period.js";
+import { renderFundFlagAdmin, resetConfirmText } from "./fund-flag-admin.js";
 import { sparkline } from "./sparkline.js";
 import { DEFAULT_THEME, THEMES, themeProperties } from "./theme.js";
 import {
@@ -10,13 +11,17 @@ import {
   MAX_TICKERS,
   PALETTES,
   PIN_LIMIT_MESSAGE,
+  ADMIN_TAB,
   SETTINGS_TABS,
+  settingsTabs,
   TIME_ZONE_PICKS,
   addTicker,
   canRemove,
   historyState,
   moveTicker,
   parseSettingsHash,
+  lastRunLabel,
+  nextRunLabel,
   refreshSummary,
   removeTicker,
   restoreTicker,
@@ -89,8 +94,17 @@ export function createAccountSettings(ctx) {
   let addDraft = "";
   let addError = "";
   let dragTicker = null;
+  let refreshBackdrop = null;
+  let refreshDialog = null;
+  let refreshPanel = null;
+  let refreshLive = null;
+  let openKind = null;
 
-  const isOpen = () => Boolean(backdrop && !backdrop.hidden);
+  const isOpen = () => openKind !== null;
+  // Admin tab: visible only when ctx.isAdmin() (metric-approval admin check; never the demo account).
+  const isAdmin = () => Boolean(ctx.isAdmin?.());
+  const visibleTabs = () => settingsTabs(isAdmin());
+  const fundFlag = { selected: null, outcomes: {} };
 
   function announce(message) {
     if (!live) return;
@@ -145,7 +159,7 @@ export function createAccountSettings(ctx) {
       window.clearTimeout(timer);
       dirty = false;
       addedSinceSave = [];
-      if (error.status === 401) {
+      if (error.sessionExpired) {
         ctx.onUnauthorized();
         return;
       }
@@ -206,14 +220,14 @@ export function createAccountSettings(ctx) {
     const tablist = el("div", "settings-tabs");
     tablist.setAttribute("role", "tablist");
     tablist.setAttribute("aria-label", "Settings sections");
-    tabButtons = SETTINGS_TABS.map((tab) => {
+    tabButtons = [...SETTINGS_TABS, ADMIN_TAB].map((tab) => {
       const tabButton = button(tab.label, "settings-tab", () => selectTab(tab.id));
       tabButton.id = `settings-tab-${tab.id}`;
       tabButton.dataset.tab = tab.id;
       tabButton.setAttribute("role", "tab");
       tabButton.setAttribute("aria-controls", "settings-panel");
       tabButton.addEventListener("keydown", (event) => {
-        const next = tabAfterKey(tab.id, event.key);
+        const next = tabAfterKey(tab.id, event.key, visibleTabs());
         if (!next) return;
         event.preventDefault();
         selectTab(next);
@@ -245,7 +259,8 @@ export function createAccountSettings(ctx) {
       return;
     }
     if (event.key !== "Tab") return;
-    const items = [...dialog.querySelectorAll(FOCUSABLE)].filter((item) => !item.closest("[hidden]"));
+    const host = event.currentTarget;
+    const items = [...host.querySelectorAll(FOCUSABLE)].filter((item) => !item.closest("[hidden]"));
     if (!items.length) return;
     const first = items[0];
     const last = items.at(-1);
@@ -260,8 +275,9 @@ export function createAccountSettings(ctx) {
 
   function selectTab(tabId) {
     const activeTabBefore = activeTab;
-    activeTab = SETTINGS_TABS.some((tab) => tab.id === tabId) ? tabId : "tickers";
+    activeTab = visibleTabs().some((tab) => tab.id === tabId) ? tabId : "tickers";
     tabButtons.forEach((tabButton) => {
+      tabButton.hidden = !visibleTabs().some((tab) => tab.id === tabButton.dataset.tab);
       const selected = tabButton.dataset.tab === activeTab;
       tabButton.setAttribute("aria-selected", String(selected));
       tabButton.tabIndex = selected ? 0 : -1;
@@ -270,10 +286,80 @@ export function createAccountSettings(ctx) {
     if (tabId !== activeTabBefore) tabError = null;
     history.replaceState(history.state, "", settingsHash(activeTab));
     renderPanel();
+    revealActiveTab();
   }
 
-  function open(tabId = "tickers", from = null) {
+  function revealActiveTab() {
+    const activeButton = tabButtons.find((tabButton) => tabButton.dataset.tab === activeTab);
+    const tablist = activeButton?.closest(".settings-tabs");
+    if (!activeButton || !tablist || tablist.clientWidth === 0) return;
+    const left = activeButton.offsetLeft;
+    const right = left + activeButton.offsetWidth;
+    const viewRight = tablist.scrollLeft + tablist.clientWidth;
+    if (left < tablist.scrollLeft) tablist.scrollLeft = left;
+    else if (right > viewRight) tablist.scrollLeft = right - tablist.clientWidth;
+  }
+
+  function holdModal() {
+    document.body.classList.add("modal-open");
+    document.querySelector("#app")?.setAttribute("inert", "");
+  }
+
+  function releaseModal(restore) {
+    document.body.classList.remove("modal-open");
+    document.querySelector("#app")?.removeAttribute("inert");
+    if (parseSettingsHash(location.hash)) history.replaceState(history.state, "", location.pathname + location.search);
+    if (restore) document.querySelector(`[data-opener="${opener}"]`)?.focus();
+  }
+
+  function suspend() {
+    if (openKind === "settings" && backdrop) {
+      flush();
+      hideToast();
+      backdrop.hidden = true;
+    }
+    if (openKind === "refresh" && refreshBackdrop) refreshBackdrop.hidden = true;
+    openKind = null;
+  }
+
+  function buildRefresh() {
+    refreshBackdrop = el("div", "settings-backdrop");
+    refreshBackdrop.hidden = true;
+    refreshBackdrop.addEventListener("mousedown", (event) => {
+      if (event.target !== refreshBackdrop) return;
+      event.preventDefault();
+      close();
+    });
+    refreshDialog = el("div", "settings-dialog refresh-dialog");
+    refreshDialog.setAttribute("role", "dialog");
+    refreshDialog.setAttribute("aria-modal", "true");
+    refreshDialog.setAttribute("aria-labelledby", "refresh-title");
+    refreshDialog.addEventListener("keydown", onDialogKeydown);
+
+    const head = el("div", "settings-head");
+    const title = el("h2", "", "Data refresh");
+    title.id = "refresh-title";
+    const closeButton = button("✕", "settings-close", close);
+    closeButton.setAttribute("aria-label", "Close data refresh");
+    head.append(title, closeButton);
+
+    refreshPanel = el("div", "settings-panel");
+    refreshPanel.id = "refresh-panel";
+    refreshLive = el("p", "visually-hidden");
+    refreshLive.setAttribute("aria-live", "polite");
+    refreshDialog.append(head, refreshPanel, refreshLive);
+    refreshBackdrop.append(refreshDialog);
+    document.body.append(refreshBackdrop);
+  }
+
+  function renderRefreshPanel() {
+    if (!refreshPanel) return;
+    refreshPanel.replaceChildren(...renderRefreshTab());
+  }
+
+  function openSettings(tabId, from) {
     if (!session.prefs) return;
+    if (openKind === "refresh") suspend();
     if (!backdrop) build();
     opener = from || "account";
     confirmed = copyPrefs(session.prefs);
@@ -283,21 +369,35 @@ export function createAccountSettings(ctx) {
     }
     setSaveNote("");
     backdrop.hidden = false;
-    document.body.classList.add("modal-open");
-    document.querySelector("#app")?.setAttribute("inert", "");
+    holdModal();
+    openKind = "settings";
     selectTab(tabId);
     tabButtons.find((tabButton) => tabButton.dataset.tab === activeTab)?.focus();
   }
 
+  function openRefresh(from) {
+    if (!session.prefs) return;
+    if (openKind === "settings") suspend();
+    if (!refreshBackdrop) buildRefresh();
+    opener = from || "account";
+    refreshBackdrop.hidden = false;
+    holdModal();
+    openKind = "refresh";
+    history.replaceState(history.state, "", settingsHash("refresh"));
+    renderRefreshPanel();
+    refreshDialog.querySelector(".settings-close")?.focus();
+  }
+
+  function open(tabId = "tickers", from = null) {
+    if (tabId === "refresh") openRefresh(from);
+    else openSettings(tabId, from);
+  }
+
   function close() {
     if (!isOpen()) return;
-    flush();
-    hideToast();
-    backdrop.hidden = true;
-    document.body.classList.remove("modal-open");
-    document.querySelector("#app")?.removeAttribute("inert");
-    if (parseSettingsHash(location.hash)) history.replaceState(history.state, "", location.pathname + location.search);
-    document.querySelector(`[data-opener="${opener}"]`)?.focus();
+    const kind = openKind;
+    suspend();
+    if (kind === "settings" || kind === "refresh") releaseModal(true);
   }
 
   // Re-render the active tab and keep focus on the same control when it still exists.
@@ -309,11 +409,38 @@ export function createAccountSettings(ctx) {
     if (activeTab === "tickers") panel.append(...renderTickersTab());
     if (activeTab === "theme") panel.append(...renderThemeTab());
     if (activeTab === "profile") panel.append(...renderProfileTab());
-    if (activeTab === "refresh") panel.append(...renderRefreshTab());
+    if (activeTab === ADMIN_TAB.id && isAdmin()) panel.append(renderAdminTab());
     if (focusKey) {
       const target = panel.querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
       (target && !target.disabled ? target : panel).focus();
     }
+  }
+
+  function renderAdminTab() {
+    return renderFundFlagAdmin({ rows: ctx.fundFlagRows?.() || [], ...fundFlag }, document, {
+      onSelect: (ticker) => {
+        fundFlag.selected = ticker;
+        renderPanel();
+      },
+      onReset: resetFundFlag,
+    });
+  }
+
+  async function resetFundFlag(ticker) {
+    if (fundFlag.outcomes[ticker]?.state === "saving") return;
+    fundFlag.selected = ticker;
+    if (!isAdmin()) {
+      fundFlag.outcomes[ticker] = { state: "forbidden" };
+      renderPanel();
+      return;
+    }
+    const ask = ctx.confirm || ((message) => globalThis.confirm?.(message));
+    if (!ask(resetConfirmText(ticker))) return;
+    fundFlag.outcomes[ticker] = { state: "saving" };
+    renderPanel();
+    fundFlag.outcomes[ticker] = await ctx.resetFundFlag(ticker);
+    if (fundFlag.outcomes[ticker].state === "forbidden") announce("Only an admin can reset the fund flag.");
+    renderPanel();
   }
 
   function renderTabError() {
@@ -721,29 +848,49 @@ export function createAccountSettings(ctx) {
       .sort((a, b) => String(a.job).localeCompare(String(b.job)))
       .forEach((job) => {
         const row = el("tr");
-        row.append(el("td", "mono", job.job || "—"));
-        row.append(el("td", "", job.name || job.job || "—"));
-        row.append(el("td", "mono", ctx.formatTime(job.last_run, session.prefs.display.time_zone)));
-        row.append(el(
-          "td",
-          "mono",
-          job.next_run ? ctx.formatTime(job.next_run, session.prefs.display.time_zone) : "not scheduled",
-        ));
+        const zone = session.prefs.display.time_zone;
+        const jobCell = el("td", "mono", job.job || "—");
+        jobCell.dataset.label = "Job";
+        const nameCell = el("td", "", job.name || job.job || "—");
+        nameCell.dataset.label = "Name";
+        const waiting = lastRunLabel(job);
+        const lastCell = el("td", "mono", waiting ?? ctx.formatTime(job.last_run, zone));
+        lastCell.dataset.label = "Last";
+        const next = nextRunLabel(job);
+        const nextCell = el("td", next.kind === "time" ? "mono" : "refresh-next");
+        nextCell.dataset.label = "Next";
+        if (next.kind === "time") nextCell.textContent = ctx.formatTime(job.next_run, zone);
+        else if (next.kind === "event") {
+          const badge = el("span", "refresh-event", "event");
+          nextCell.append(badge, document.createTextNode(` ${next.text}`));
+        } else nextCell.textContent = next.text;
+        row.append(jobCell, nameCell, lastCell, nextCell);
 
         const state = ["ok", "partial", "failed", "skipped"].includes(job.status) ? job.status : "never_run";
         const statusCell = el("td");
         const statusLabel = state === "never_run" ? "never run" : state;
         const indicator = el("span", `dot ${state === "never_run" ? "" : state}`.trim());
         indicator.setAttribute("aria-hidden", "true");
-        statusCell.append(indicator, document.createTextNode(` ${statusLabel}`));
+        const statusLine = el("span", "refresh-status-line");
+        statusLine.append(indicator, document.createTextNode(` ${statusLabel}`));
+        statusCell.append(statusLine);
         statusCell.className = `refresh-status ${state}`;
+        statusCell.dataset.label = "Status";
         statusCell.title = job.last_outcome
           ? `Last outcome: ${job.last_outcome}; failed sources: ${job.failed_sources || 0}`
           : "No successful run has been recorded.";
         if (job.failed_source_ids?.length) {
-          statusCell.append(el("div", "settings-hint error", `Failed: ${job.failed_source_ids.join(", ")}`));
+          statusCell.append(el("div", "settings-hint error refresh-detail", `Failed: ${job.failed_source_ids.join(", ")}`));
         }
-        if (state === "skipped" && job.reason) statusCell.append(el("div", "settings-hint", job.reason));
+        if (state === "skipped" && job.reason) statusCell.append(el("div", "settings-hint refresh-detail", job.reason));
+        if (job.summary && Number.isFinite(job.summary.tickers_processed)) {
+          const noFiler = job.summary.no_sec_filer ? ` · ${job.summary.no_sec_filer} not SEC filers` : "";
+          statusCell.append(el(
+            "div",
+            "settings-hint refresh-detail",
+            `${job.summary.tickers_processed} tickers · ${job.summary.new_filings || 0} new filings · ${job.summary.failures || 0} failed${noFiler}`,
+          ));
+        }
         row.append(statusCell);
         body.append(row);
       });
@@ -800,7 +947,6 @@ export function createAccountSettings(ctx) {
       ["My tickers", "add · pin · reorder", () => open("tickers", "account")],
       ["Theme & display", "colors · chart period", () => open("theme", "account")],
       ["Profile & time zone", `email · ${timeZoneLabel(session.prefs.display.time_zone)}`, () => open("profile", "account")],
-      ["All refresh jobs", "job schedule · status", () => open("refresh", "account")],
       ["Sign out", "", ctx.signOut],
     ].map(([label, hint, run]) => {
       const item = el("button", "menu-item");
@@ -875,13 +1021,22 @@ export function createAccountSettings(ctx) {
     renderAccountButton,
     // The dashboard re-rendered (new data); refresh prices and history chips in the open tab.
     refresh() {
-      if (isOpen()) renderPanel();
+      if (openKind === "settings") renderPanel();
+      if (openKind === "refresh") renderRefreshPanel();
     },
     openFromHash() {
       const tab = parseSettingsHash(location.hash);
-      if (tab && !isOpen()) open(tab, "account");
-      else if (tab && isOpen() && tab !== activeTab) selectTab(tab);
-      else if (!tab && isOpen()) close();
+      if (!tab) {
+        if (isOpen()) close();
+        return;
+      }
+      if (tab === "refresh") {
+        if (openKind !== "refresh") open("refresh", "account");
+        return;
+      }
+      if (openKind === "refresh") suspend();
+      if (openKind !== "settings") open(tab, "account");
+      else if (tab !== activeTab) selectTab(tab);
     },
   };
 }

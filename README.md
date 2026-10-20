@@ -4,7 +4,7 @@ One operations UI and three backends that serve the same `/api/v1` contract. The
 
 | Piece | Runtime | Where it runs |
 | --- | --- | --- |
-| Shared UI | Static JS copied from `ram290476/investor-dashboard` | kind, or the facade in `make demo` |
+| Shared UI | Static JS synced from `ram290476/investor-dashboard` `9744d57` | kind, or the facade in `make demo` |
 | Go API | Cloud Run, scale to zero | `backends/go-gcp` |
 | Python API | ECS Fargate (arm64, 0.25 vCPU / 0.5 GB, no ALB, cloudflared sidecar) | `backends/python-aws` |
 | .NET API | App Service for Linux, F1, two apps (`dotnet-api-blue` / `dotnet-api-green`) | `backends/dotnet-azure` |
@@ -28,7 +28,7 @@ deploy/                   kind config, Kustomize for kind and the local facade
 infra/terraform/          OpenTofu-compatible HCL for gcp, aws, azure, cloudflare
 ```
 
-Section 11 of the architecture copies `apps/web` as zero-build ES modules. The market screens stay that app. `frontend/hybrid.html` is the hybrid operations page and uses the same Industrial Dark tokens (`theme.js`, IBM Plex, `styles.css`).
+Section 11 of the architecture copies `apps/web` as zero-build ES modules. The market screens stay that app, synced from investor-dashboard `9744d57` (theme tokens, styles, layout modules, and `safe-storage.js`). `frontend/hybrid.html` is the hybrid operations page and uses the same Industrial Dark tokens (`theme.js`, IBM Plex, `styles.css`).
 
 ## Run locally
 

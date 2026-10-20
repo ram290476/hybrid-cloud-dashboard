@@ -80,11 +80,31 @@ app.MapPut("/api/v1/prefs", async (HttpRequest req) =>
     var stamp = new JsonObject { ["wall_ms"] = wall, ["counter"] = 0, ["origin"] = backend };
     if (incoming["display"] is JsonObject display)
     {
-        foreach (var key in new[] { "theme", "time_zone", "updown_palette", "chart_period", "panels" })
+        foreach (var key in new[] { "theme", "time_zone", "updown_palette", "chart_period", "panels", "panel_mode" })
         {
             if (display[key] is null) continue;
             if (display[key]!.ToJsonString() == current["display"]?[key]?.ToJsonString()) continue;
             doc["fields"]![$"display.{key}"] = new JsonObject { ["value"] = JsonNode.Parse(display[key]!.ToJsonString()), ["hlc"] = stamp.DeepClone() };
+        }
+    }
+    if (incoming["chart_settings"] is JsonObject charts)
+    {
+        var currentCharts = current["chart_settings"] as JsonObject ?? new JsonObject();
+        var seen = new HashSet<string>();
+        foreach (var pair in charts)
+        {
+            seen.Add(pair.Key);
+            if (pair.Value?.ToJsonString() == currentCharts[pair.Key]?.ToJsonString()) continue;
+            doc["fields"]![$"chart.{pair.Key}"] = new JsonObject
+            {
+                ["value"] = pair.Value is null ? null : JsonNode.Parse(pair.Value.ToJsonString()),
+                ["hlc"] = stamp.DeepClone(),
+            };
+        }
+        foreach (var pair in currentCharts)
+        {
+            if (seen.Contains(pair.Key)) continue;
+            doc["fields"]![$"chart.{pair.Key}"] = new JsonObject { ["tombstone"] = true, ["hlc"] = stamp.DeepClone() };
         }
     }
     ApplySet(doc["tickers"]!.AsObject(), current["tickers"]!.AsArray(), incoming["tickers"] as JsonArray, stamp, backend, wall);

@@ -120,6 +120,35 @@ func TestApplyVersionConflictAndBothFields(t *testing.T) {
 	}
 }
 
+func TestApplyPublicPersistsPanelModeAndChartSettings(t *testing.T) {
+	doc := EmptyDoc("user-1")
+	doc.Fields["display.theme"] = scalar("industrial-dark", 100, "gcp-go")
+	doc.Fields["chart.TSLA"] = scalar(map[string]any{"overlays": []any{"SPY"}}, 100, "gcp-go")
+	pub := Project(doc)
+	pub.Display["panel_mode"] = "all"
+	pub.ChartSettings = map[string]map[string]any{
+		"SPCX": {"overlays": []any{"MA20"}, "lanes": []any{"VOL"}},
+	}
+	next, err := ApplyPublic(doc, pub, stamp(400, "aws-python"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := Project(next)
+	if out.Display["panel_mode"] != "all" {
+		t.Fatalf("panel_mode %#v", out.Display["panel_mode"])
+	}
+	if out.Display["theme"] != "industrial-dark" {
+		t.Fatalf("theme %#v", out.Display["theme"])
+	}
+	if _, ok := out.ChartSettings["TSLA"]; ok {
+		t.Fatalf("removed chart settings should be tombstoned: %#v", out.ChartSettings)
+	}
+	overlays, _ := out.ChartSettings["SPCX"]["overlays"].([]any)
+	if len(overlays) != 1 || overlays[0] != "MA20" {
+		t.Fatalf("chart settings %#v", out.ChartSettings["SPCX"])
+	}
+}
+
 func TestFutureStampRejected(t *testing.T) {
 	doc := EmptyDoc("user-1")
 	doc.Fields["display.theme"] = scalar("industrial-dark", time.Now().Add(time.Hour).UnixMilli(), "gcp-go")

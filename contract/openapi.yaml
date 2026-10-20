@@ -158,6 +158,7 @@ components:
             time_zone: { type: string }
             updown_palette: { type: string }
             chart_period: { type: string }
+            panel_mode: { type: string, enum: [follow, all] }
         chart_settings:
           type: object
           additionalProperties: { type: object, additionalProperties: true }
