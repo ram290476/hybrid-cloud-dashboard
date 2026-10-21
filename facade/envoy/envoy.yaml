@@ -1,5 +1,8 @@
 # Optional production data plane. Local kind and `make demo` run the Go facade
 # instead. This file shows the JSON access log the k3s Envoy would emit.
+# Public TLS for hybridcloud.vellamsetti.com terminates at the facade on its
+# own certificate. This sample listener is the in-cluster HTTP hop. DNS is a
+# GoDaddy CNAME to the facade hostname, not Cloudflare Load Balancing.
 static_resources:
   listeners:
     - name: ingress
