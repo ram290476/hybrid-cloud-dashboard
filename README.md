@@ -25,7 +25,7 @@ backends/dotnet-azure     Azure (JIT Dockerfile; Dockerfile.aot is the cloud pub
 facade/                   cost/perf policy, health, audit log
 sync/                     field-level merge across the three object stores
 deploy/                   kind config, Kustomize for kind and the local facade
-infra/terraform/          OpenTofu-compatible HCL for gcp, aws, azure, cloudflare
+infra/terraform/          Terraform HCL for gcp, aws, azure, cloudflare
 ```
 
 Section 11 of the architecture copies `apps/web` as zero-build ES modules. The market screens stay that app, synced from investor-dashboard `9744d57` (theme tokens, styles, layout modules, and `safe-storage.js`). `frontend/hybrid.html` is the hybrid operations page and uses the same Industrial Dark tokens (`theme.js`, IBM Plex, `styles.css`).
@@ -106,7 +106,7 @@ VS Code: open `hybrid-cloud-dashboard.code-workspace`. Tasks wrap the make targe
 
 ## Deploy each cloud
 
-Terraform and OpenTofu both read this HCL (`required_version >= 1.6.0`). Validate only. Do not apply from this repo until the new accounts exist.
+Terraform is the infrastructure tool. Every root sets `required_version >= 1.6.0`. CI installs HashiCorp Terraform 1.9.8 and only validates. Do not apply from this repo until the new accounts exist.
 
 ```bash
 make terraform-validate
@@ -120,7 +120,7 @@ make terraform-validate
 | `infra/terraform/cloudflare` | One CNAME. Health-checked DNS failover is not turned on |
 | `infra/terraform/labs` | EKS / AKS / GKE sketches. Not referenced by the cloud roots |
 
-GitHub Actions (`.github/workflows/ci.yml`) runs the tests and `terraform validate` with actions pinned to commit SHAs. `release.yml` is `workflow_dispatch` only and exits before any cloud call until the OIDC variable for that cloud is set. No cloud keys are stored.
+GitHub Actions (`.github/workflows/ci.yml`) runs the tests and `terraform validate` with HashiCorp Terraform 1.9.8. Actions are pinned to commit SHAs. `release.yml` is `workflow_dispatch` only and exits before any cloud call until the OIDC variable for that cloud is set. No cloud keys are stored.
 
 Auth in the cloud is a new Cognito pool in a new AWS account. `AUTH_MODE=cognito` returns 401 until `COGNITO_ISSUER` exists. Local mode is `AUTH_MODE=dev`.
 
@@ -134,7 +134,6 @@ Auth in the cloud is a new Cognito pool in a new AWS account. `AUTH_MODE=cognito
 
 ## Decisions still open
 
-- Terraform or OpenTofu as the tool of record. The HCL is written so either validates. D-6 is unchanged.
 - AWS runtime is Lambda. Aliases `blue` and `green` are the color flip. Pin `blue_version` or `green_version` to keep one color on an older published version.
 - The public DNS name, and whether `app.example.com` should pay for health-checked failover.
 - The new AWS account id for Cognito. Do not reuse `308639168050`. Every account id, token, and billing account in this repo is a placeholder.
