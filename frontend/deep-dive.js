@@ -11,6 +11,32 @@ export function hasDeepDive(payload) {
   return Array.isArray(payload?.deep_dive?.sections) && payload.deep_dive.sections.length > 0;
 }
 
+function scoreboardSection(sections) {
+  const list = Array.isArray(sections) ? sections : [];
+  return list.find((item) => {
+    if (!item || typeof item !== "object") return false;
+    if (item.id === "scoreboard") return true;
+    if (/scoreboard/i.test(String(item.title || ""))) return true;
+    return (item.panels || []).some((panel) => panel?.kind === "scoreboard");
+  }) || null;
+}
+
+/**
+ * Placeholder notice for the Trends tab. It sits under the scoreboard title when
+ * the payload has one, and it is not drawn inside the Deep dive tab.
+ */
+export function renderTrendDisclaimer(payload, doc = document) {
+  if (!hasDeepDive(payload)) return null;
+  const dive = payload.deep_dive;
+  const text = String(dive.disclaimer || "").trim()
+    || "Figures appear when a source has been collected. Pending review values stay labeled. Empty series are not zero.";
+  const block = el(doc, "div", "trend-scoreboard-notice");
+  const section = scoreboardSection(dive.sections);
+  if (section?.title) block.append(el(doc, "h3", "stock-section-title", section.title));
+  block.append(el(doc, "p", "deep-dive-banner", text));
+  return block;
+}
+
 /** Primary sections first, then secondary, so the section strip matches the page. */
 export function orderedDeepDiveSections(sections) {
   const list = Array.isArray(sections) ? sections : [];
@@ -44,8 +70,11 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 /** Quarter or month label. Quarters keep the year on every tick. Months keep the year only when it changes. */
 export function axisLabel(period) {
   const text = String(period || "");
-  const quarter = /^(\d{4})Q([1-4])$/.exec(text);
-  if (quarter) return { period: text, primary: `Q${quarter[2]}`, secondary: quarter[1], kind: "quarter" };
+  const quarter = /^(?:FY)?(\d{4})Q([1-4])$/.exec(text);
+  if (quarter) {
+    const secondary = text.startsWith("FY") ? `FY${quarter[1]}` : quarter[1];
+    return { period: text, primary: `Q${quarter[2]}`, secondary, kind: "quarter" };
+  }
   const month = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(text);
   if (month) {
     return { period: text, primary: MONTHS[Number(month[2]) - 1], secondary: month[1], kind: "month" };
@@ -85,6 +114,62 @@ export function trendTone(change, inverse = false) {
   if (change == null || Number.isNaN(number) || number === 0) return "flat";
   const up = number > 0;
   return (inverse ? !up : up) ? "up" : "down";
+}
+
+// Visible text for the sticky section bar. Keys are catalog titles; the chip
+// tooltip keeps the original wording. Unknown titles pass through with the
+// same word abbreviations, so a new company does not need its own list.
+const SECTION_SHORT_LABELS = {
+  "trend scoreboard": "Scoreboard",
+  "revenue & earnings forecast": "Rev & EPS",
+  "revenue and earnings forecast": "Rev & EPS",
+  "robotaxi & autonomy": "Robotaxi",
+  "commercial energy": "Comm. energy",
+  "fsd by region": "FSD regions",
+  "production & deliveries": "Prod. & deliveries",
+  "manufacturing footprint": "Mfg. footprint",
+  "energy projects & news": "Energy news",
+  "public vehicle records": "Vehicle records",
+  "segment gross margin": "Seg. margin",
+  "government obligations": "Gov. obligations",
+  "projected launches": "Proj. launches",
+  "new factories": "Factories",
+  "revenue by segment": "Rev by segment",
+  "revenue mix": "Rev mix",
+  "segment operating income": "Seg. op. income",
+  "net sales by product": "Sales by product",
+  "operating income": "Op. income",
+  "sales by segment": "Sales by seg.",
+  "sales by product": "Sales by product",
+  "revenue by channel": "Rev by channel",
+  "gross profit and operating income": "GP & op. income",
+  "operating income by segment": "Op. income by seg.",
+  "revenue by end market": "Rev by market",
+  "reportable segments": "Segments",
+  "revenue by market": "Rev by market",
+  "revenue by customer": "Rev by customer",
+};
+
+/** Short chip label. The caller keeps the catalog title for the tooltip. */
+export function shortSectionLabel(title) {
+  const original = String(title || "").replace(/\s+/g, " ").trim();
+  if (!original) return "";
+  const known = SECTION_SHORT_LABELS[original.toLowerCase()];
+  if (known) return known;
+  // A leading maker name before Semi is not part of the chip.
+  if (/^[A-Z][a-z]+\s+Semi$/.test(original)) return "Semi";
+  return original
+    .replace(/\bRevenue\b/g, "Rev")
+    .replace(/\bearnings\b/g, "EPS")
+    .replace(/\bOperating\b/g, "Op.")
+    .replace(/\boperating\b/g, "op.")
+    .replace(/\bSegment\b/g, "Seg.")
+    .replace(/\bsegment\b/g, "seg.")
+    .replace(/\bProjected\b/g, "Proj.")
+    .replace(/\bProduction\b/g, "Prod.")
+    .replace(/\bManufacturing\b/g, "Mfg.")
+    .replace(/\bGovernment\b/g, "Gov.")
+    .replace(/\bGross profit\b/g, "GP");
 }
 
 function el(doc, tag, className, text) {
@@ -129,10 +214,6 @@ export function renderDeepDive(payload, doc = document, options = {}) {
     root.append(el(doc, "p", "data-state", "No deep dive is configured for this company."));
     return root;
   }
-  const banner = el(doc, "p", "deep-dive-banner");
-  banner.textContent = dive.disclaimer
-    || "Figures appear when a source has been collected. Pending review values stay labeled. Empty series are not zero.";
-  root.append(banner);
 
   const ticker = options.ticker || payload?.ticker || "";
   const nav = renderSectionNav(orderedDeepDiveSections(dive.sections), ticker, root, doc, options);
@@ -177,7 +258,14 @@ function renderSectionNav(sections, ticker, root, doc, options) {
   strip.setAttribute("aria-label", "Sections");
   const track = el(doc, "div", "section-strip-track");
   for (const section of sections || []) {
-    const chip = el(doc, "a", "section-strip-chip", section.title || section.id || "");
+    const full = String(section.title || section.id || "").replace(/\s+/g, " ").trim();
+    const chip = el(doc, "a", "section-strip-chip");
+    chip.append(el(doc, "span", "section-strip-label", shortSectionLabel(full)));
+    if (full) {
+      chip.title = full;
+      chip.setAttribute("title", full);
+      chip.setAttribute("aria-label", full);
+    }
     bindSectionLink(chip, section, ticker, root, doc, options);
     track.append(chip);
   }
@@ -333,7 +421,9 @@ function renderPanel(panel, doc) {
   header.append(copy, tools);
   const body = el(doc, "div", "panel-body");
   if (panel.kind === "forecast-band") body.append(renderForecast(panel, doc));
-  else {
+  else if (panel.kind === "stacked-area" || panel.kind === "headline-card") {
+    body.append(renderArchetypePanel(panel, doc));
+  } else {
     if (panel.kpis?.length && panel.kind === "scoreboard") body.append(renderScoreboard(panel.kpis, doc));
     else if (panel.kpis?.length) body.append(renderKpis(panel.kpis, doc));
     if (panel.modes?.length) body.append(renderModes(panel, doc));
@@ -418,12 +508,62 @@ function renderTile(tile, doc, withSpark) {
   }
   if (tile.qoq != null) meta.append(directionMark(doc, "QoQ", tile.qoq, tile.inverse));
   if (tile.yoy != null) meta.append(directionMark(doc, "YoY", tile.yoy, tile.inverse));
+  if (tile.share != null && !Number.isNaN(Number(tile.share))) {
+    meta.append(el(doc, "span", "deep-dive-share", `${(Number(tile.share) * 100).toFixed(1)}% of mix`));
+  }
   if (meta.childNodes.length) card.append(meta);
   if (withSpark) {
-    const spark = sparkline(doc, tile.sparkline || []);
+    const spark = sparkline(doc, tile.sparkline || [], tile.sparkScale);
     if (spark) card.append(spark);
   }
+  const detected = renderPatterns(doc, tile.patterns);
+  if (detected) card.append(detected);
   return card;
+}
+
+function renderPatterns(doc, items) {
+  const flags = Array.isArray(items) ? items.filter((item) => item && item.label) : [];
+  if (!flags.length) return null;
+  const box = el(doc, "div", "deep-dive-patterns");
+  box.append(el(doc, "span", "deep-dive-pattern-label", "Pattern detection"));
+  box.append(el(doc, "span", "deep-dive-pattern-note", "Not a forecast."));
+  for (const item of flags) {
+    const row = el(doc, "p", "deep-dive-pattern");
+    row.append(el(doc, "span", "deep-dive-pattern-name", item.label));
+    if (item.detail) row.append(el(doc, "span", "deep-dive-pattern-detail", item.detail));
+    box.append(row);
+  }
+  return box;
+}
+
+function renderArchetypePanel(panel, doc) {
+  const wrap = el(doc, "div", "deep-dive-archetype");
+  const lead = (panel.kpis || [])[0];
+  if (lead) wrap.append(renderTile(lead, doc, true));
+  if ((panel.multiples || []).length) wrap.append(renderMultiples(panel.multiples, doc, true));
+  const detail = el(doc, "div", "deep-dive-detail-body");
+  let hasDetail = false;
+  if (panel.kind === "stacked-area" && (panel.series || []).some((series) => reportedPoints(series).length)) {
+    detail.append(renderStackedArea(panel.series, doc));
+    hasDetail = true;
+  } else if (panel.kind === "headline-card" && (panel.series || []).some((series) => reportedPoints(series).length)) {
+    detail.append(renderChart(panel.series, doc));
+    hasDetail = true;
+  }
+  if (panel.table && (panel.table.rows || []).length) {
+    detail.append(renderTable(panel.table, doc, panel.empty_label));
+    hasDetail = true;
+  }
+  if (hasDetail) {
+    const details = el(doc, "details", "deep-dive-details");
+    details.append(el(doc, "summary", "", "Quarterly detail"));
+    details.append(detail);
+    wrap.append(details);
+  }
+  if (!hasVisibleData(panel) && !(panel.kpis || []).length && !(panel.multiples || []).length) {
+    wrap.append(el(doc, "p", "deep-dive-empty", panel.empty_label || "Not yet disclosed"));
+  }
+  return wrap;
 }
 
 function pendingBadge(doc) {
@@ -463,12 +603,12 @@ function directionMark(doc, kind, change, inverse) {
   return mark;
 }
 
-function sparkline(doc, values) {
+function sparkline(doc, values, scale) {
   const nums = values.map((value) => (value == null || value === "" ? null : Number(value)));
   if (!nums.some((value) => value != null && !Number.isNaN(value))) return null;
   const finite = nums.filter((value) => value != null && !Number.isNaN(value));
-  const min = Math.min(...finite);
-  const max = Math.max(...finite);
+  const min = scale && scale.min != null ? Number(scale.min) : Math.min(...finite);
+  const max = scale && scale.max != null ? Number(scale.max) : Math.max(...finite);
   const span = max - min || 1;
   const width = 96;
   const height = 28;
@@ -705,10 +845,95 @@ function renderMap(panel, doc) {
   return wrap;
 }
 
-function renderMultiples(tiles, doc) {
+function sharedSparkScale(tiles) {
+  const finite = [];
+  for (const tile of tiles || []) {
+    for (const value of tile?.sparkline || []) {
+      if (value == null || value === "" || Number.isNaN(Number(value))) continue;
+      finite.push(Number(value));
+    }
+  }
+  if (!finite.length) return null;
+  const min = Math.min(...finite);
+  const max = Math.max(...finite);
+  return { min: min >= 0 ? 0 : min, max };
+}
+
+function renderMultiples(tiles, doc, shareScale = false) {
   const grid = el(doc, "div", "deep-dive-multiples");
-  for (const tile of tiles) grid.append(renderTile(tile, doc, true));
+  const scale = shareScale ? sharedSparkScale(tiles) : null;
+  for (const tile of tiles) {
+    grid.append(renderTile({ ...tile, sparkScale: scale }, doc, true));
+  }
   return grid;
+}
+
+function renderStackedArea(seriesList, doc) {
+  const drawn = (seriesList || []).filter((series) => reportedPoints(series).length);
+  if (!drawn.length) return el(doc, "p", "deep-dive-empty", "Not yet disclosed");
+  const periods = periodsOf(drawn);
+  const complete = periods.filter((period) => drawn.every((series) => {
+    const value = valueAt(series, period);
+    return value != null && Number.isFinite(Number(value));
+  }));
+  if (!complete.length) return renderChart(seriesList, doc);
+  const width = 640;
+  const height = 220;
+  const pad = { l: 44, r: 12, t: 12, b: 36 };
+  const innerW = width - pad.l - pad.r;
+  const innerH = height - pad.t - pad.b;
+  let max = 0;
+  for (const period of complete) {
+    let stack = 0;
+    for (const series of drawn) stack += Math.abs(Number(valueAt(series, period)));
+    max = Math.max(max, stack);
+  }
+  max = max || 1;
+  const svg = svgEl(doc, "svg", { class: "deep-dive-chart", viewBox: `0 0 ${width} ${height}`, role: "img" });
+  svg.append(svgEl(doc, "title", {}, "Segment mix"));
+  for (const fraction of [0.5, 1]) {
+    const y = pad.t + innerH - fraction * innerH;
+    svg.append(svgEl(doc, "line", {
+      x1: pad.l, x2: width - pad.r, y1: y.toFixed(1), y2: y.toFixed(1), class: "deep-dive-gridline",
+    }));
+  }
+  const slot = complete.length > 1 ? innerW / (complete.length - 1) : innerW;
+  const xAt = (index) => pad.l + (complete.length > 1 ? index * slot : innerW / 2);
+  const baselines = complete.map(() => pad.t + innerH);
+  drawn.forEach((series, seriesIndex) => {
+    const top = [];
+    const bottom = [];
+    complete.forEach((period, index) => {
+      const value = Math.abs(Number(valueAt(series, period)));
+      const y = baselines[index] - (value / max) * innerH;
+      top.push(`${xAt(index).toFixed(1)},${y.toFixed(1)}`);
+      bottom.push(`${xAt(index).toFixed(1)},${baselines[index].toFixed(1)}`);
+      baselines[index] = y;
+    });
+    const points = [...top, ...bottom.reverse()].join(" ");
+    svg.append(svgEl(doc, "polygon", {
+      points,
+      fill: SERIES[seriesIndex % SERIES.length],
+      "fill-opacity": "0.85",
+    }));
+  });
+  const slotWidth = complete.length > 1 ? slot : innerW;
+  for (const label of axisTicks(complete, slotWidth)) {
+    const index = complete.indexOf(label.period);
+    if (index < 0) continue;
+    const x = xAt(index).toFixed(1);
+    svg.append(svgEl(doc, "text", {
+      x, y: height - 18, class: "deep-dive-axis", "text-anchor": "middle",
+    }, label.primary));
+    if (label.secondary) {
+      svg.append(svgEl(doc, "text", {
+        x, y: height - 6, class: "deep-dive-axis deep-dive-axis-year", "text-anchor": "middle",
+      }, label.secondary));
+    }
+  }
+  const wrap = el(doc, "div", "deep-dive-chart-wrap");
+  wrap.append(svg, legend(doc, drawn));
+  return wrap;
 }
 
 function renderMilestones(items, doc) {

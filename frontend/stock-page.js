@@ -7,8 +7,8 @@ import { catalystDateLabel } from "./roadmap.js";
 export const LONG_PRESS_MS = 550;
 
 export const STOCK_TABS = [
-  { id: "overview", label: "Overview" },
   { id: "trends", label: "Trends" },
+  { id: "overview", label: "Technical" },
   { id: "fundamentals", label: "Fundamentals" },
   { id: "kpis", label: "KPIs" },
 ];
@@ -16,7 +16,7 @@ export const STOCK_TABS = [
 // Last tab, and only for a signed-in admin. The demo account is never an admin.
 export const ADMIN_STOCK_TAB = { id: "admin", label: "Admin" };
 
-const STOCK_TAB_ORDER = ["overview", "trends", "deep-dive", "fundamentals", "kpis"];
+const STOCK_TAB_ORDER = ["trends", "overview", "deep-dive", "fundamentals", "kpis"];
 
 // Last resort only: companyName() uses the API company_name / SEC entity name first.
 // SPCX has no SEC entity name, so it keeps a display name here.
@@ -182,7 +182,7 @@ export function companyDescription(payload, tickerData) {
 }
 
 /**
- * Company tabs, in order. Deep dive sits between Trends and Fundamentals, and only when sections exist.
+ * Company tabs, in order. Technical follows Trends. Deep dive sits between Technical and Fundamentals, and only when sections exist.
  * Admin is last, and only when options.admin is true (a signed-in admin, never the demo account).
  */
 export function stockTabs(payload, options = {}) {
@@ -201,7 +201,7 @@ export function stockTabs(payload, options = {}) {
 /**
  * Tab a company hash may open.
  * Admin is refused unless that tab is in the visible list, so a non-admin URL cannot open it.
- * A bare company hash is Overview. An unknown tab keeps the current one when it is still visible.
+ * A bare company hash is Technical. An unknown tab keeps the current one when it is still visible.
  */
 export function visibleStockTab(hashTab, tabs, current = "overview") {
   const ids = (Array.isArray(tabs) ? tabs : [])
@@ -610,46 +610,6 @@ export function callsCopy() {
     guidance: "Show pending review includes proposed series on this page. Approved only hides those panels and list rows.",
     transcripts: "Quarterly call transcripts are not collected. They are added only where the company hosts them or the license explicitly allows it.",
   };
-}
-
-function notePoints(card) {
-  const points = [];
-  const text = String(card?.text || "").trim();
-  if (text) points.push(text);
-  if (card?.latest && card.latest !== "not reported") {
-    const line = `${card.name || "Note"}: ${card.latest}`;
-    if (!points.includes(line)) points.push(line);
-  }
-  for (const row of card?.rows || []) {
-    if (typeof row === "string" && row.trim()) points.push(row.trim());
-    else if (row && typeof row === "object") {
-      const point = String(row.point || row.text || row.note || row.title || "").trim();
-      if (point) points.push(point);
-    }
-  }
-  return points;
-}
-
-function quarterLabel(value) {
-  const match = QUARTER.exec(String(value || "").trim());
-  return match ? `Q${match[2]} ${match[1]}` : String(value || "").trim();
-}
-
-/** Guidance cards as quarterly notes, latest quarter first. The underlying metric fields stay on the cards. */
-export function quarterlyNoteEntries(guidance) {
-  const cards = [...(guidance || [])].filter(Boolean).sort((a, b) => (
-    String(b.latestPeriod || "").localeCompare(String(a.latestPeriod || ""))
-    || String(b.periodEnd || b.published || "").localeCompare(String(a.periodEnd || a.published || ""))
-  ));
-  return cards.map((card) => ({
-    id: card.id || "",
-    quarter: quarterLabel(card.latestPeriod),
-    date: String(card.periodEnd || card.published || "").trim(),
-    points: notePoints(card),
-    sourceUrl: card.sourceUrl || "",
-    sourceTitle: card.sourceTitle || "Source",
-    pending: Boolean(card.pending),
-  })).filter((note) => note.quarter || note.points.length || note.sourceUrl);
 }
 
 export function emptyKpiCopy() {
