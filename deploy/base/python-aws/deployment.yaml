@@ -30,7 +30,7 @@ spec:
         - name: APP_LANG
           value: "python"
         - name: APP_RUNTIME
-          value: "ecs-fargate"
+          value: "lambda"
         - name: AUTH_MODE
           value: "dev"
         - name: DEV_JWT_SECRET
@@ -95,7 +95,7 @@ spec:
         - name: APP_LANG
           value: "python"
         - name: APP_RUNTIME
-          value: "ecs-fargate"
+          value: "lambda"
         - name: AUTH_MODE
           value: "dev"
         - name: DEV_JWT_SECRET

@@ -16,7 +16,7 @@ from dashboard_api.store import Memory, S3Dynamo
 
 APP_BACKEND = os.environ.get("APP_BACKEND", "aws-python")
 APP_LANG = os.environ.get("APP_LANG", "python")
-APP_RUNTIME = os.environ.get("APP_RUNTIME", "ecs-fargate")
+APP_RUNTIME = os.environ.get("APP_RUNTIME", "lambda")
 APP_COLOR = os.environ.get("APP_COLOR", "blue")
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
 DATA_VERSION = os.environ.get("DATA_VERSION", "fixture-2026.10.09")

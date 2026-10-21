@@ -1,82 +1,21 @@
-data "aws_iam_policy_document" "ecs_assume" {
+data "aws_iam_policy_document" "lambda_assume" {
   statement {
     actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
-      identifiers = ["ecs-tasks.amazonaws.com"]
+      identifiers = ["lambda.amazonaws.com"]
     }
   }
 }
 
-resource "aws_iam_role" "task" {
-  name               = "hcd-python-task"
-  assume_role_policy = data.aws_iam_policy_document.ecs_assume.json
+resource "aws_iam_role" "lambda" {
+  name               = "hcd-python-lambda"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
 }
 
-resource "aws_ecs_cluster" "hcd" {
-  name = "hcd"
-}
-
-resource "aws_ecs_task_definition" "python" {
-  family                   = "py-api"
-  network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
-  execution_role_arn       = aws_iam_role.task.arn
-  task_role_arn            = aws_iam_role.task.arn
-
-  runtime_platform {
-    operating_system_family = "LINUX"
-    cpu_architecture        = "ARM64"
-  }
-
-  container_definitions = jsonencode([
-    {
-      name      = "api"
-      image     = var.python_image
-      essential = true
-      portMappings = [{ containerPort = 8080, protocol = "tcp" }]
-      environment = [
-        { name = "APP_BACKEND", value = "aws-python" },
-        { name = "APP_LANG", value = "python" },
-        { name = "APP_RUNTIME", value = "ecs-fargate" },
-        { name = "PORT", value = "8080" }
-      ]
-    },
-    {
-      name      = "cloudflared"
-      image     = "cloudflare/cloudflared:2024.10.0"
-      essential = false
-      command   = ["tunnel", "--no-autoupdate", "run", "--token", "placeholder"]
-    }
-  ])
-}
-
-resource "aws_ecs_service" "blue" {
-  name            = "py-api-blue"
-  cluster         = aws_ecs_cluster.hcd.id
-  task_definition = aws_ecs_task_definition.python.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
-
-  network_configuration {
-    subnets          = var.subnet_ids
-    assign_public_ip = true
-  }
-}
-
-resource "aws_ecs_service" "green" {
-  name            = "py-api-green"
-  cluster         = aws_ecs_cluster.hcd.id
-  task_definition = aws_ecs_task_definition.python.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
-
-  network_configuration {
-    subnets          = var.subnet_ids
-    assign_public_ip = true
-  }
+resource "aws_iam_role_policy_attachment" "lambda_logs" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_s3_bucket" "serving" {
@@ -94,6 +33,59 @@ resource "aws_dynamodb_table" "prefs" {
   attribute {
     name = "user_sub"
     type = "S"
+  }
+}
+
+data "aws_iam_policy_document" "lambda_data" {
+  statement {
+    sid = "ServingObjects"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+    ]
+    resources = ["${aws_s3_bucket.serving.arn}/*"]
+  }
+
+  statement {
+    sid = "ServingBucket"
+    actions = [
+      "s3:ListBucket",
+      "s3:GetBucketLocation",
+    ]
+    resources = [aws_s3_bucket.serving.arn]
+  }
+
+  statement {
+    sid = "Prefs"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DescribeTable",
+    ]
+    resources = [aws_dynamodb_table.prefs.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "lambda_data" {
+  name   = "hcd-python-data"
+  role   = aws_iam_role.lambda.id
+  policy = data.aws_iam_policy_document.lambda_data.json
+}
+
+module "python_lambda" {
+  source = "./modules/lambda-url"
+
+  image_uri                      = var.python_image
+  role_arn                       = aws_iam_role.lambda.arn
+  reserved_concurrent_executions = var.reserved_concurrent_executions
+  blue_version                   = var.blue_version
+  green_version                  = var.green_version
+  environment = {
+    APP_BACKEND = "aws-python"
+    APP_LANG    = "python"
+    APP_RUNTIME = "lambda"
+    S3_BUCKET   = var.serving_bucket
+    PREFS_TABLE = "hcd-prefs"
   }
 }
 

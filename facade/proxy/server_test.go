@@ -19,7 +19,7 @@ func testDoc(urls ...string) policy.Document {
 	doc.Spec.Evaluation = policy.Evaluation{MinProbeWeight: 0, HysteresisPct: 0}
 	names := []string{"gcp-go", "aws-python", "azure-dotnet"}
 	langs := []string{"go", "python", "dotnet"}
-	runtimes := []string{"cloud-run", "ecs-fargate", "app-service"}
+	runtimes := []string{"cloud-run", "lambda", "app-service"}
 	for i, name := range names {
 		if i >= len(urls) {
 			break

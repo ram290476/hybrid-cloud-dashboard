@@ -6,12 +6,12 @@ One operations UI and three backends that serve the same `/api/v1` contract. The
 | --- | --- | --- |
 | Shared UI | Static JS synced from `ram290476/investor-dashboard` `9744d57` | kind, or the facade in `make demo` |
 | Go API | Cloud Run, scale to zero | `backends/go-gcp` |
-| Python API | ECS Fargate (arm64, 0.25 vCPU / 0.5 GB, no ALB, cloudflared sidecar) | `backends/python-aws` |
+| Python API | Lambda (arm64 container image, 512 MB, Function URL, no ALB) | `backends/python-aws` |
 | .NET API | App Service for Linux, F1, two apps (`dotnet-api-blue` / `dotnet-api-green`) | `backends/dotnet-azure` |
 | Facade | Go policy engine locally; Envoy sample in `facade/envoy` | kind + k3s, not EKS/AKS/GKE |
 | Sync | `hcd-sync` on the Mac (launchd) | `sync/` |
 
-Blue/green is two layers. Facade weights are per environment (`gcp-go`, `aws-python`, `azure-dotnet`), never per color. The color flip stays inside each environment: a Cloud Run revision, the ECS service pair, or the two F1 apps.
+Blue/green is two layers. Facade weights are per environment (`gcp-go`, `aws-python`, `azure-dotnet`), never per color. The color flip stays inside each environment: a Cloud Run revision, the Lambda aliases `blue` and `green`, or the two F1 apps.
 
 ## Repo map
 
@@ -20,7 +20,7 @@ frontend/                 copied market UI + hybrid.html operations page
 contract/openapi.yaml     shared API
 contract/fixtures/        serving snapshots and merge vectors
 backends/go-gcp           GCP
-backends/python-aws       AWS (container-first; Lambda module is unwired)
+backends/python-aws       AWS (Lambda container image; uvicorn locally)
 backends/dotnet-azure     Azure (JIT Dockerfile; Dockerfile.aot is the cloud publish sketch)
 facade/                   cost/perf policy, health, audit log
 sync/                     field-level merge across the three object stores
@@ -37,7 +37,7 @@ Process mode (no cluster). Needs Go, Python 3.12 or 3.13, and the .NET 10 SDK. A
 ```bash
 uv python install 3.13
 uv venv --python 3.13
-uv pip install fastapi uvicorn boto3 pytest httpx
+uv pip install fastapi uvicorn boto3 mangum pytest httpx
 make demo
 ```
 
@@ -91,7 +91,7 @@ That forwards the Envoy Service in namespace `envoy-gateway-system` (Envoy Gatew
 
 Emulators live in `hcd-deps`: SeaweedFS (S3). The Deployment is `seaweedfs`; Services are `seaweedfs` and `minio` (the alias setup-plan commands use). fake-gcs-server, Azurite, DynamoDB Local, the Firestore emulator, and the Cosmos emulator `vnext-latest` (linux/arm64 and amd64). MinIO is not used.
 
-Local Kubernetes names are not the cloud names. Deployments are `go-gcp-blue`, `python-aws-blue`, and `dotnet-azure-blue` (green deployments exist at 0 replicas). Services are `go-gcp`, `python-aws`, and `dotnet-azure`, so `kubectl exec deploy/python-aws` does not match; use `deploy/python-aws-blue`. ECS service names in Terraform stay `py-api-blue` and `py-api-green`.
+Local Kubernetes names are not the cloud names. Deployments are `go-gcp-blue`, `python-aws-blue`, and `dotnet-azure-blue` (green deployments exist at 0 replicas). Services are `go-gcp`, `python-aws`, and `dotnet-azure`, so `kubectl exec deploy/python-aws` does not match; use `deploy/python-aws-blue`. The pods still run uvicorn. In AWS the same app is one Lambda function, `py-api`, with aliases `blue` and `green`. Each alias has a Function URL. `reserved_concurrent_executions` defaults to **0**, so a mistaken apply cannot serve traffic until that value is raised.
 
 The Go pods set `STORAGE_EMULATOR_HOST` and `FIRESTORE_EMULATOR_HOST` (host `firestore.hcd-deps.svc.cluster.local:8080`). The Python pods set `AWS_ENDPOINT_URL_S3` to `http://minio.hcd-deps.svc.cluster.local:9000`. The .NET pods set `AZURE_STORAGE_CONNECTION` and the same value as `Storage__ConnectionString` (the API reads either). They also set `Cosmos__Endpoint`, `Cosmos__Database`, and `Cosmos__Container` so a setup-plan `printenv` sees them. The Cosmos client is not wired; prefs stay on the blob `prefs/<sub>.json`.
 
@@ -115,7 +115,7 @@ make terraform-validate
 | Root | What a later apply would create |
 | --- | --- |
 | `infra/terraform/gcp` | Cloud Run `go-api` (min instances 0), two buckets, Firestore database `hcd`, Workload Identity pool, budget only when `billing_account` is set |
-| `infra/terraform/aws` | ECS cluster, one ARM64 task definition (API + cloudflared), services `py-api-blue` and `py-api-green` with `desired_count` default **0**, S3, DynamoDB, Cognito pool, GitHub OIDC role for `ram290476/hybrid-cloud-dashboard` |
+| `infra/terraform/aws` | Lambda function `py-api` (ARM64 container image, aliases `blue` and `green`, Function URL on each alias, `reserved_concurrent_executions` default **0**), S3, DynamoDB, Cognito pool, GitHub OIDC role for `ram290476/hybrid-cloud-dashboard` |
 | `infra/terraform/azure` | Linux F1 plan, two web apps, storage, Cosmos with `free_tier_enabled`, user-assigned identity |
 | `infra/terraform/cloudflare` | One CNAME. Health-checked DNS failover is not turned on |
 | `infra/terraform/labs` | EKS / AKS / GKE sketches. Not referenced by the cloud roots |
@@ -130,12 +130,12 @@ Auth in the cloud is a new Cognito pool in a new AWS account. `AUTH_MODE=cognito
 - Firestore, Cosmos query, and DynamoDB are not the sync transport. Each backend reads and writes the prefs document at `prefs/<sub>.json` in its object store, and `hcd-sync` merges those objects. Python also mirrors that document in DynamoDB. A read merges the object and the Dynamo row with the same field-level HLC rules, so a stale Dynamo item cannot hide the synced object. `Cosmos__*` on the .NET Deployment is present for local inspection only.
 - OpenTelemetry SDKs are not linked into the three processes yet. JSON logs and the response headers (`x-backend-env`, `x-backend-lang`, `x-backend-runtime`, `x-app-color`, `x-app-version`, `x-data-version`) are. The collector and Grafana LGTM manifests are in `deploy/overlays/local/observability`. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the collector when the SDK lands. Grafana Cloud stays the free-tier destination for real accounts.
 - .NET Native AOT (`Dockerfile.aot`) is not the local image. Local kind uses the JIT SDK image, per section 9.4.2.
-- The Lambda URL module under `infra/terraform/aws/modules/lambda-url` is not called by the AWS root.
+- The AWS root calls `infra/terraform/aws/modules/lambda-url`. Local kind does not run Lambda. `python-aws-blue` stays a uvicorn Deployment on port 8080. The cloud image is `backends/python-aws/Dockerfile.lambda` (Mangum). The facade cloud endpoint for `aws-python` is the active alias Function URL (`blue_function_url` or `green_function_url`).
 
 ## Decisions still open
 
 - Terraform or OpenTofu as the tool of record. The HCL is written so either validates. D-6 is unchanged.
-- AWS runtime: Fargate is what the root creates. Lambda stays a module until you confirm it.
+- AWS runtime is Lambda. Aliases `blue` and `green` are the color flip. Pin `blue_version` or `green_version` to keep one color on an older published version.
 - The public DNS name, and whether `app.example.com` should pay for health-checked failover.
 - The new AWS account id for Cognito. Do not reuse `308639168050`. Every account id, token, and billing account in this repo is a placeholder.
 - Cosmos and the Firestore emulator are the heavy local pods. Drop them from the deps overlay if the 24 GB Mac is tight; the APIs still serve fixtures from memory.
