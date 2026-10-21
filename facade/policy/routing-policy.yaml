@@ -1,7 +1,9 @@
 # Cloud routing policy (section 13). Weights are per environment, never per color.
-# Blue/green lives inside each environment: Cloud Run revisions, ECS services
-# py-api-blue / py-api-green behind one hostname, App Service apps
-# dotnet-api-blue / dotnet-api-green. Replace example.com after Ram picks a domain.
+# Blue/green lives inside each environment: Cloud Run revisions, Lambda aliases
+# py-api:blue / py-api:green (each alias has a Function URL), App Service apps
+# dotnet-api-blue / dotnet-api-green. The facade still calls one URL per
+# environment. Replace aws-python.example.com with the active alias Function
+# URL (Terraform output blue_function_url or green_function_url).
 apiVersion: hcd.ram.dev/v1
 kind: RoutingPolicy
 metadata:
@@ -36,9 +38,9 @@ spec:
       max_weight: 100
     - name: aws-python
       endpoint: https://aws-python.example.com
-      labels: { lang: python, runtime: ecs-fargate }
+      labels: { lang: python, runtime: lambda }
       cost: { per_million_requests_usd: 0.60, per_gb_egress_usd: 0.09 }
-      free_tier: { requests: 1000000, threshold_pct: 80 }
+      free_tier: { requests: 1000000, gb_seconds: 400000, threshold_pct: 80 }
       hard_cap_monthly_usd: 5
       max_weight: 100
   routes:

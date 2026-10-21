@@ -31,7 +31,7 @@ jobs:
         with:
           dotnet-version: "10.0.x"
       - name: Python dependencies
-        run: python3 -m pip install fastapi uvicorn boto3 pytest httpx
+        run: python3 -m pip install fastapi uvicorn boto3 pytest httpx mangum
       - name: Tests
         run: make test
 

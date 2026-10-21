@@ -17,6 +17,7 @@ def test_dashboard_matches_fixture(monkeypatch):
     response = client.get("/api/v1/dashboard", headers=HEADERS)
     assert response.status_code == 200
     assert response.headers["x-backend-lang"] == "python"
+    assert response.headers["x-backend-runtime"] == "lambda"
     assert response.headers["x-app-color"] == "blue"
     want = json.loads((ROOT / "contract/fixtures/serving/dashboard.json").read_text())
     assert response.json() == want

@@ -1,12 +1,13 @@
 [project]
 name = "dashboard-api"
 version = "0.1.0"
-description = "Hybrid cloud dashboard API, Python on ECS Fargate"
+description = "Hybrid cloud dashboard API, Python on Lambda"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115",
   "uvicorn>=0.30",
   "boto3>=1.35",
+  "mangum>=0.19",
 ]
 
 [project.optional-dependencies]

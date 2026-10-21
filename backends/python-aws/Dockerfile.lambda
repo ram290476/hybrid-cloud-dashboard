@@ -1,0 +1,10 @@
+# Cloud image for the Lambda function in infra/terraform/aws.
+# Build from the repo root for the arm64 architecture the function declares:
+#   docker build --platform linux/arm64 -f backends/python-aws/Dockerfile.lambda -t hcd-python-aws:lambda .
+# Local kind uses backends/python-aws/Dockerfile, which stays a uvicorn server.
+FROM public.ecr.aws/lambda/python:3.12
+COPY backends/python-aws /var/task
+COPY contract/fixtures /fixtures
+RUN pip install --no-cache-dir fastapi uvicorn boto3 mangum
+ENV FIXTURES_DIR=/fixtures PYTHONPATH=/var/task/src
+CMD ["dashboard_api.handler.handler"]
