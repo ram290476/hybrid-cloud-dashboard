@@ -4,6 +4,9 @@
 # dotnet-api-blue / dotnet-api-green. The facade still calls one URL per
 # environment. Replace aws-python.example.com with the active alias Function
 # URL (Terraform output blue_function_url or green_function_url).
+# Clients use https://hybridcloud.vellamsetti.com. That name is a GoDaddy CNAME
+# to the facade. These endpoints are the backends behind the facade, not DNS
+# targets. Failover across them is this policy, not a DNS round-robin.
 apiVersion: hcd.ram.dev/v1
 kind: RoutingPolicy
 metadata:

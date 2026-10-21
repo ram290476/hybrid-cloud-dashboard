@@ -11,7 +11,7 @@ One operations UI and three backends that serve the same `/api/v1` contract. The
 | Facade | Go policy engine locally; Envoy sample in `facade/envoy` | kind + k3s, not EKS/AKS/GKE |
 | Sync | `hcd-sync` on the Mac (launchd) | `sync/` |
 
-Blue/green is two layers. Facade weights are per environment (`gcp-go`, `aws-python`, `azure-dotnet`), never per color. The color flip stays inside each environment: a Cloud Run revision, the Lambda aliases `blue` and `green`, or the two F1 apps.
+Blue/green is two layers. Facade weights are per environment (`gcp-go`, `aws-python`, `azure-dotnet`), never per color. The color flip stays inside each environment: a Cloud Run revision, the Lambda aliases `blue` and `green`, or the two F1 apps. The public name is the subdomain `hybridcloud.vellamsetti.com`. DNS is one GoDaddy CNAME to the facade. The facade, not DNS, fails over across the three backends.
 
 ## Repo map
 
@@ -25,7 +25,8 @@ backends/dotnet-azure     Azure (JIT Dockerfile; Dockerfile.aot is the cloud pub
 facade/                   cost/perf policy, health, audit log
 sync/                     field-level merge across the three object stores
 deploy/                   kind config, Kustomize for kind and the local facade
-infra/terraform/          Terraform HCL for gcp, aws, azure, cloudflare
+infra/terraform/          Terraform HCL for gcp, aws, azure, and a gated cloudflare sketch
+docs/runbooks/public-dns.md   GoDaddy CNAME for hybridcloud.vellamsetti.com
 ```
 
 Section 11 of the architecture copies `apps/web` as zero-build ES modules. The market screens stay that app, synced from investor-dashboard `9744d57` (theme tokens, styles, layout modules, and `safe-storage.js`). `frontend/hybrid.html` is the hybrid operations page and uses the same Industrial Dark tokens (`theme.js`, IBM Plex, `styles.css`).
@@ -117,7 +118,7 @@ make terraform-validate
 | `infra/terraform/gcp` | Cloud Run `go-api` (min instances 0), two buckets, Firestore database `hcd`, Workload Identity pool, budget only when `billing_account` is set |
 | `infra/terraform/aws` | Lambda function `py-api` (ARM64 container image, aliases `blue` and `green`, Function URL on each alias, `reserved_concurrent_executions` default **0**), S3, DynamoDB, Cognito pool, GitHub OIDC role for `ram290476/hybrid-cloud-dashboard` |
 | `infra/terraform/azure` | Linux F1 plan, two web apps, storage, Cosmos with `free_tier_enabled`, user-assigned identity |
-| `infra/terraform/cloudflare` | One CNAME. Health-checked DNS failover is not turned on |
+| `infra/terraform/cloudflare` | No Cloudflare objects unless `enable_cloudflare_dns` is true (default **false**). Output `facade_hostname` is the GoDaddy CNAME target. Load Balancing is not defined |
 | `infra/terraform/labs` | EKS / AKS / GKE sketches. Not referenced by the cloud roots |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the tests and `terraform validate` with HashiCorp Terraform 1.9.8. Actions are pinned to commit SHAs. `release.yml` is `workflow_dispatch` only and exits before any cloud call until the OIDC variable for that cloud is set. No cloud keys are stored.
@@ -132,9 +133,12 @@ Auth in the cloud is a new Cognito pool in a new AWS account. `AUTH_MODE=cognito
 - .NET Native AOT (`Dockerfile.aot`) is not the local image. Local kind uses the JIT SDK image, per section 9.4.2.
 - The AWS root calls `infra/terraform/aws/modules/lambda-url`. Local kind does not run Lambda. `python-aws-blue` stays a uvicorn Deployment on port 8080. The cloud image is `backends/python-aws/Dockerfile.lambda` (Mangum). The facade cloud endpoint for `aws-python` is the active alias Function URL (`blue_function_url` or `green_function_url`).
 
+## Public DNS
+
+`hybridcloud.vellamsetti.com` is a subdomain CNAME at GoDaddy. The target is the facade hostname from `terraform -chdir=infra/terraform/cloudflare output facade_hostname`. Nameservers stay at GoDaddy. TLS terminates at the facade on a certificate for that subdomain. Cross-backend failover is the facade policy, not DNS. Cloudflare Load Balancing and DNS round-robin are a future option and are not configured. Steps are in [`docs/runbooks/public-dns.md`](docs/runbooks/public-dns.md).
+
 ## Decisions still open
 
 - AWS runtime is Lambda. Aliases `blue` and `green` are the color flip. Pin `blue_version` or `green_version` to keep one color on an older published version.
-- The public DNS name, and whether `app.example.com` should pay for health-checked failover.
 - The new AWS account id for Cognito. Do not reuse `308639168050`. Every account id, token, and billing account in this repo is a placeholder.
 - Cosmos and the Firestore emulator are the heavy local pods. Drop them from the deps overlay if the 24 GB Mac is tight; the APIs still serve fixtures from memory.
