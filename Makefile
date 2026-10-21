@@ -38,6 +38,8 @@ local-seed:
 sync-status:
 	@set -a && . ./scripts/hcd-sync-env.sh && set +a && cd sync && HCD_SYNC_ONCE=1 go run ./cmd/hcd-sync -once
 
+# HashiCorp Terraform is the infrastructure tool. Each root sets
+# required_version >= 1.6.0. CI installs Terraform 1.9.8. Validate only.
 terraform-validate:
 	@set -e; for dir in infra/terraform/gcp infra/terraform/aws infra/terraform/azure infra/terraform/cloudflare infra/terraform/aws/modules/lambda-url infra/terraform/labs/eks infra/terraform/labs/aks infra/terraform/labs/gke; do \
 	  echo "== $$dir"; \
