@@ -78,7 +78,7 @@ export function companyBookmarks(tab, context = {}) {
     }];
   }
   if (id !== ANALYSIS_TAB_ID) return [];
-  return [
+  const bookmarks = [
     {
       id: "technical",
       title: "Technical Summary",
@@ -86,6 +86,22 @@ export function companyBookmarks(tab, context = {}) {
       icon: "technical",
     },
   ];
+  if (context.fund === true) return bookmarks;
+  bookmarks.push(
+    {
+      id: "revenue-flow",
+      title: "Revenue Flow",
+      anchorId: "stock-panel-revenue-flow",
+      icon: "fundamentals",
+    },
+    {
+      id: "yearly",
+      title: "Yearly Fundamentals",
+      anchorId: "stock-panel-yearly",
+      icon: "fundamentals",
+    },
+  );
+  return bookmarks;
 }
 
 function el(doc, tag, className, text) {
@@ -195,18 +211,27 @@ function setChipTabbable(strip, on) {
   }
 }
 
+function sectionStripFade(doc, side) {
+  const name = side === "end" ? "section-strip-fade section-strip-fade-end" : "section-strip-fade section-strip-fade-start";
+  const node = el(doc, "span", name);
+  node.setAttribute("aria-hidden", "true");
+  return node;
+}
+
 function renderStrip(bookmarks, root, doc, options, docked) {
   const strip = el(doc, "nav", docked ? "section-strip section-strip-docked is-visible" : "section-strip");
   strip.setAttribute("aria-label", "Sections");
   if (!docked) strip.setAttribute("aria-hidden", "true");
   const markRoot = root || strip;
   const track = el(doc, "div", "section-strip-track");
+  track.append(sectionStripFade(doc, "start"));
   for (const bookmark of bookmarks) {
     const chip = el(doc, "a", "section-strip-chip", bookmark.title || bookmark.id);
     if (!docked) chip.setAttribute("tabindex", "-1");
     bindBookmark(chip, bookmark, markRoot, options);
     track.append(chip);
   }
+  track.append(sectionStripFade(doc, "end"));
   strip.append(track);
   return strip;
 }
