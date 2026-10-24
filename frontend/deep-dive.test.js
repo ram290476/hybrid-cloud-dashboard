@@ -10,6 +10,12 @@ import {
   hasDeepDive,
   layoutNhtsaAxis,
   mapDataPoints,
+  MIN_DATA_POINTS,
+  plottableMapPoints,
+  plottableSeriesPoints,
+  REGULATOR_MIN_DATA_POINTS,
+  RESEARCH_FALLBACK,
+  showsResearchFallback,
   nhtsaMonthLabel,
   nhtsaPeriods,
   orderedDeepDiveSections,
@@ -578,17 +584,30 @@ test("deep dive sources name no ticker and ship no example observations", () => 
   assert.match(app, /hasDeepDive\(payload\)/);
   assert.match(app, /stock-tab-mark", "\+"/);
   assert.match(deepStyles, /grid-template-columns:\s*repeat\(6/);
-  assert.match(deepStyles, /\.deep-dive-panel,\s*\n\.deep-dive-chart-wrap,\s*\n\.deep-dive-map-wrap,\s*\n\.deep-dive-forecast,\s*\n\.section-strip,\s*\n\.section-strip-track\s*\{[^}]*overflow-x:\s*clip/);
+  assert.match(deepStyles, /\.deep-dive-panel,\s*\n\.deep-dive-chart-wrap,\s*\n\.deep-dive-map-wrap,\s*\n\.deep-dive-forecast\s*\{[^}]*overflow-x:\s*clip/);
+  assert.doesNotMatch(deepStyles, /\.section-strip,\s*\n\.section-strip-track\s*\{[^}]*overflow-x:\s*clip/);
   assert.match(deepStyles, /\.deep-dive-chart,\s*\n\.deep-dive-map,\s*\n\.deep-dive-spark\s*\{[^}]*max-width:\s*100%/);
   assert.match(deepStyles, /\.deep-dive-table\s*\{[^}]*width:\s*100%/);
   assert.match(deepStyles, /\.deep-dive-table\s*\{[^}]*table-layout:\s*fixed/);
-  assert.match(deepStyles, /\.section-strip-track\s*\{[^}]*flex-wrap:\s*wrap/);
-  assert.match(deepStyles, /\.deep-dive \.section-strip-chip\s*\{[^}]*max-width:\s*100%/);
-  assert.match(deepStyles, /\.deep-dive \.section-strip-label\s*\{[^}]*text-overflow:\s*ellipsis/);
+  const stripTrack = deepStyles.match(/\.section-strip-track\s*\{[^}]*\}/)[0];
+  assert.match(stripTrack, /flex-wrap:\s*nowrap/);
+  assert.match(stripTrack, /overflow-x:\s*auto/);
+  assert.match(stripTrack, /scrollbar-width:\s*none/);
+  assert.match(stripTrack, /min-width:\s*0/);
+  assert.doesNotMatch(stripTrack, /flex-wrap:\s*wrap/);
+  assert.match(deepStyles, /\.section-strip\s*\{[^}]*overflow:\s*visible/);
+  assert.match(deepStyles, /\.section-strip\s*\{[^}]*width:\s*100%/);
+  assert.match(deepStyles, /\.section-strip-chip\s*\{[^}]*min-width:\s*0/);
+  assert.match(deepStyles, /\.section-strip-chip\s*\{[^}]*flex:\s*0 0 auto/);
+  assert.match(deepStyles, /\.section-strip-chip\s*\{[^}]*white-space:\s*nowrap/);
+  assert.match(deepStyles, /\.deep-dive \.section-strip-chip\s*\{[^}]*min-width:\s*0/);
   assert.match(deepStyles, /\.deep-dive \.section-strip-label\s*\{[^}]*white-space:\s*nowrap/);
+  assert.match(deepStyles, /@container section-strip scroll-state\(scrollable: right\)/);
+  assert.match(source, /section-strip-fade-start/);
+  assert.match(source, /section-strip-fade-end/);
   assert.match(source, /section-strip-label/);
   assert.match(deepStyles, /max-width:\s*480px\)[\s\S]*?top:\s*98px/);
-  assert.equal(deepStyles.match(/overflow-x:\s*auto/g), null);
+  assert.equal(deepStyles.match(/@media[^{]+\{[^@]*\.section-strip-track[^{]*overflow-x:\s*auto/s), null);
   assert.match(styles, /\.stock-page-tabs\s*\{[^}]*display:\s*flex/);
   assert.match(ci, /node --check "\$\$f"/);
   assert.match(ci, /frontend\/\*\.js/);
@@ -647,7 +666,7 @@ test("deep dive section chips abbreviate catalog titles and keep the full label 
       sections: [...titles].map((title, index) => ({
         id: `section-${index}`,
         title,
-        panels: [{ id: `panel-${index}`, kind: "note", title }],
+        panels: [{ id: `panel-${index}`, kind: "note", title, series: reportedSeries(MIN_DATA_POINTS) }],
       })),
     },
   }, fakeDocument(false), { ticker: "exmpl" });
@@ -902,6 +921,339 @@ test("research maps render only when a place has a reported value", () => {
   assert.match(text, /Robotaxi fleet/);
   assert.equal(byClass(view, "deep-dive-map-wrap").length, 1);
   assert.doesNotMatch(source, /TSLA|Tesla|NVDA|SPCX|ARKK/);
+});
+
+function reportedSeries(count) {
+  return [{
+    label: "Reported",
+    role: "bar",
+    points: Array.from({ length: count }, (_item, index) => ({
+      period: `${2020 + index}Q1`,
+      value: index + 1,
+      reported: true,
+    })),
+  }];
+}
+
+function countryMarkers(names) {
+  return names.map((place, index) => ({ place, reported: true, value: index + 1 }));
+}
+
+test("world maps and sparse panels share the four-point threshold", () => {
+  assert.equal(MIN_DATA_POINTS, 4);
+  assert.equal(RESEARCH_FALLBACK, "No deployment data available");
+  assert.equal(plottableMapPoints({ map: "world", markers: [{ place: "Austin", reported: true, value: 2 }] }).length, 0);
+  assert.equal(plottableMapPoints({ map: "world", markers: countryMarkers(["China", "Germany", "Japan"]) }).length, 3);
+  assert.equal(plottableMapPoints({ map: "us", markers: [{ place: "Austin", reported: true, value: 12 }] }).length, 1);
+  assert.match(source, /export const MIN_DATA_POINTS = 4/);
+  assert.match(source, /plottableMapPoints\(panel\)\.length >= MIN_DATA_POINTS/);
+  assert.match(source, /panelDataPoints\(panel\) < MIN_DATA_POINTS/);
+  assert.doesNotMatch(source, /TSLA|Tesla|NVDA|SPCX|AAPL/);
+  const fallbackRule = styles.match(/\.deep-dive-fallback\s*\{[^}]*\}/)[0];
+  assert.match(fallbackRule, /background:\s*var\(--surface\)/);
+  assert.match(fallbackRule, /color:\s*var\(--secondary\)/);
+  assert.match(fallbackRule, /border:\s*1px solid var\(--line\)/);
+  assert.doesNotMatch(fallbackRule, /#[0-9a-fA-F]{3,8}/);
+
+  const sparse = renderDeepDive({
+    deep_dive: {
+      title: "Deep dive",
+      sections: [
+        {
+          id: "energy",
+          title: "Commercial energy",
+          panels: [{
+            id: "energy-deployments",
+            title: "Storage deployments",
+            map: "world",
+            kpis: [{ label: "Deployed", value: 3, unit: "GWh" }],
+            series: reportedSeries(6),
+            markers: countryMarkers(["China", "Germany", "Japan"]),
+          }],
+        },
+        {
+          id: "semi",
+          title: "Vehicle program",
+          panels: [
+            { id: "semi-orders", title: "Orders", series: reportedSeries(2) },
+            { id: "semi-production", title: "Semi production", series: reportedSeries(3) },
+          ],
+        },
+        {
+          id: "optimus",
+          title: "Optimus",
+          panels: [{
+            id: "optimus",
+            title: "Optimus",
+            kpis: [{ label: "Optimus", value: 1 }],
+            milestones: [
+              { id: "gen-2", label: "Gen 2", reported: true },
+              { id: "gen-3", label: "Gen 3", reported: false },
+            ],
+          }],
+        },
+        {
+          id: "starlink",
+          title: "Constellation",
+          panels: [{
+            id: "starlink",
+            title: "Production and deployments",
+            map: "world",
+            series: reportedSeries(1),
+            markers: countryMarkers(["Australia"]),
+          }],
+        },
+      ],
+    },
+  }, fakeDocument(false));
+  const sparseText = textOf(sparse);
+  assert.equal(byClass(sparse, "deep-dive-map").length, 0);
+  assert.match(sparseText, /Storage deployments/);
+  assert.match(sparseText, /Deployed/);
+  assert.match(sparseText, /China/);
+  assert.match(sparseText, /Orders/);
+  assert.doesNotMatch(sparseText, /Semi production/);
+  assert.doesNotMatch(sparseText, /Optimus/);
+  assert.match(sparseText, /Production and deployments/);
+  const chips = byClass(sparse, "section-strip-label").map((node) => node.textContent);
+  assert.deepEqual(chips, ["Comm. energy", "Vehicle program", "Constellation"]);
+  assert.equal(byClass(sparse, "deep-dive-fallback").length, 0);
+
+  const shown = renderDeepDive({
+    deep_dive: {
+      title: "Deep dive",
+      sections: [
+        {
+          id: "energy",
+          title: "Commercial energy",
+          panels: [{
+            id: "energy-deployments",
+            title: "Storage deployments",
+            map: "world",
+            markers: countryMarkers(["China", "Germany", "Japan", "Australia"]),
+          }],
+        },
+        {
+          id: "semi",
+          title: "Vehicle program",
+          panels: [{ id: "semi-production", title: "Semi production", series: reportedSeries(4) }],
+        },
+        {
+          id: "optimus",
+          title: "Optimus",
+          panels: [{
+            id: "optimus",
+            title: "Optimus",
+            milestones: [
+              { id: "a", label: "A", reported: true },
+              { id: "b", label: "B", reported: true },
+              { id: "c", label: "C", reported: true },
+              { id: "d", label: "D", reported: true },
+            ],
+          }],
+        },
+      ],
+    },
+  }, fakeDocument(false));
+  assert.equal(byClass(shown, "deep-dive-map").length, 1);
+  assert.match(textOf(shown), /Semi production/);
+  assert.match(textOf(shown), /Optimus/);
+  assert.deepEqual(byClass(shown, "section-strip-label").map((node) => node.textContent), [
+    "Comm. energy",
+    "Vehicle program",
+    "Optimus",
+  ]);
+
+  const emptyPayload = {
+    deep_dive: {
+      title: "Deep dive",
+      sections: [
+        {
+          id: "energy",
+          title: "Commercial energy",
+          panels: [{ id: "energy-deployments", title: "Storage deployments", map: "world", markers: [] }],
+        },
+        {
+          id: "semi",
+          title: "Vehicle program",
+          panels: [{ id: "semi-production", title: "Semi production", series: reportedSeries(1) }],
+        },
+        {
+          id: "optimus",
+          title: "Optimus",
+          panels: [{ id: "optimus", title: "Optimus", series: [] }],
+        },
+      ],
+    },
+  };
+  assert.equal(showsResearchFallback(emptyPayload), true);
+  const empty = renderDeepDive(emptyPayload, fakeDocument(false));
+  assert.equal(byClass(empty, "deep-dive-fallback").length, 1);
+  assert.equal(byClass(empty, "deep-dive-fallback")[0].textContent, RESEARCH_FALLBACK);
+  assert.equal(byClass(empty, "section-strip-chip").length, 0);
+  assert.equal(byClass(empty, "deep-dive-map").length, 0);
+  const kept = {
+    deep_dive: {
+      ...emptyPayload.deep_dive,
+      sections: [
+        ...emptyPayload.deep_dive.sections,
+        { id: "bars", title: "Bars", panels: [{ id: "bars", title: "Bars", series: reportedSeries(1) }] },
+      ],
+    },
+  };
+  assert.equal(showsResearchFallback(kept), false);
+  assert.equal(byClass(renderDeepDive(kept, fakeDocument(false)), "deep-dive-fallback").length, 0);
+});
+
+function chartPoint(period, value, reported = true) {
+  return { period, value, reported };
+}
+
+function regulatorPanel(points) {
+  return {
+    id: "public-regulator",
+    kind: "trend-bars",
+    title: "Regulator records",
+    width: "wide",
+    cadence: "monthly",
+    kpis: [{ label: "Permits held", value: null, empty_label: "Not yet disclosed" }],
+    series: [{ label: "Permits held", role: "bar", points }],
+  };
+}
+
+test("regulator records stay hidden under two plottable points", () => {
+  assert.equal(REGULATOR_MIN_DATA_POINTS, 2);
+  assert.match(source, /export const REGULATOR_MIN_DATA_POINTS = 2/);
+  assert.match(source, /plottableSeriesPoints\(panel\)\.length < REGULATOR_MIN_DATA_POINTS/);
+  assert.doesNotMatch(source, /TSLA|Tesla|NVDA|SPCX|AAPL/);
+
+  const blank = regulatorPanel([
+    { period: "2026-08", value: null, reported: false },
+    { period: "2026-09", value: "", reported: true },
+  ]);
+  const one = regulatorPanel([chartPoint("2026-10", 4)]);
+  const two = regulatorPanel([chartPoint("2026-09", 3), chartPoint("2026-10", 4)]);
+  const unplotted = regulatorPanel([
+    chartPoint("2026-10", 4),
+    { period: "", value: 9, reported: true },
+    { period: "2026-11", value: "pending", reported: true },
+    { period: "2026-12", value: 8, reported: false },
+  ]);
+  assert.equal(plottableSeriesPoints(blank).length, 0);
+  assert.equal(plottableSeriesPoints(one).length, 1);
+  assert.equal(plottableSeriesPoints(two).length, 2);
+  assert.equal(plottableSeriesPoints(unplotted).length, 1);
+  assert.equal(plottableSeriesPoints({
+    series: [{ points: [chartPoint("2026-10", 2)] }],
+    modes: [{ series: [{ points: [chartPoint("2026-11", 5)] }] }],
+  }).length, 2);
+
+  const hidden = renderDeepDive({
+    deep_dive: {
+      title: "Deep dive",
+      sections: [{
+        id: "robotaxi",
+        title: "Robotaxi & autonomy",
+        panels: [
+          { id: "fleet", title: "Fleet", kpis: [{ label: "Fleet", value: 40, unit: "count" }] },
+          one,
+        ],
+      }],
+    },
+  }, fakeDocument(false));
+  assert.match(textOf(hidden), /Fleet/);
+  assert.doesNotMatch(textOf(hidden), /Regulator records/);
+  assert.equal(byClass(hidden, "deep-dive-chart").length, 0);
+  assert.deepEqual(byClass(hidden, "section-strip-label").map((node) => node.textContent), ["Robotaxi"]);
+  assert.equal(byClass(hidden, "deep-dive-fallback").length, 0);
+
+  const dropped = renderDeepDive({
+    deep_dive: {
+      title: "Deep dive",
+      sections: [
+        {
+          id: "records",
+          title: "Public vehicle records",
+          panels: [blank],
+        },
+        {
+          id: "fleet",
+          title: "Fleet",
+          panels: [{ id: "fleet", title: "Fleet", series: reportedSeries(1) }],
+        },
+      ],
+    },
+  }, fakeDocument(false));
+  assert.doesNotMatch(textOf(dropped), /Regulator records/);
+  assert.deepEqual(byClass(dropped, "section-strip-label").map((node) => node.textContent), ["Fleet"]);
+
+  const shown = renderDeepDive({
+    deep_dive: {
+      title: "Deep dive",
+      sections: [{
+        id: "records",
+        title: "Public vehicle records",
+        panels: [two],
+      }],
+    },
+  }, fakeDocument(false));
+  assert.match(textOf(shown), /Regulator records/);
+  assert.equal(byClass(shown, "deep-dive-chart").length, 1);
+  assert.deepEqual(byClass(shown, "section-strip-label").map((node) => node.textContent), ["Vehicle records"]);
+  assert.equal(byClass(shown, "deep-dive-fallback").length, 0);
+
+  const onlyEmpty = {
+    deep_dive: {
+      title: "Deep dive",
+      sections: [{ id: "records", title: "Public vehicle records", panels: [one] }],
+    },
+  };
+  assert.equal(showsResearchFallback(onlyEmpty), true);
+  const fallback = renderDeepDive(onlyEmpty, fakeDocument(false));
+  assert.equal(byClass(fallback, "deep-dive-fallback").length, 1);
+  assert.equal(byClass(fallback, "deep-dive-fallback")[0].textContent, RESEARCH_FALLBACK);
+  assert.equal(byClass(fallback, "section-strip-chip").length, 0);
+  assert.doesNotMatch(textOf(fallback), /Regulator records/);
+
+  const withSparse = {
+    deep_dive: {
+      title: "Deep dive",
+      sections: [
+        {
+          id: "energy",
+          title: "Commercial energy",
+          panels: [{ id: "energy-deployments", title: "Storage deployments", map: "world", markers: [] }],
+        },
+        {
+          id: "semi",
+          title: "Vehicle program",
+          panels: [{ id: "semi-production", title: "Semi production", series: reportedSeries(1) }],
+        },
+        { id: "records", title: "Public vehicle records", panels: [unplotted] },
+      ],
+    },
+  };
+  assert.equal(showsResearchFallback(withSparse), true);
+  const sparseFallback = renderDeepDive(withSparse, fakeDocument(false));
+  assert.equal(byClass(sparseFallback, "deep-dive-fallback")[0].textContent, RESEARCH_FALLBACK);
+  assert.equal(byClass(sparseFallback, "section-strip-chip").length, 0);
+
+  const credits = renderDeepDive({
+    deep_dive: {
+      title: "Deep dive",
+      sections: [{
+        id: "credits",
+        title: "Credits",
+        panels: [{
+          id: "credits",
+          title: "Regulatory credits",
+          series: reportedSeries(1),
+        }],
+      }],
+    },
+  }, fakeDocument(false));
+  assert.match(textOf(credits), /Regulatory credits/);
+  assert.equal(byClass(credits, "deep-dive-fallback").length, 0);
 });
 
 test("the NHTSA chart starts at Jan 2024 and uses month labels that fit the width", () => {
