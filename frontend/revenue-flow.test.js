@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { curvePull, layoutRevenueFlow, renderRevenueFlow, resolveSelection, revenueFlowModel, ribbonPath } from "./revenue-flow.js";
+import { curvePull, flowTextWidth, latestDataQuarter, layoutRevenueFlow, renderRevenueFlow, resolveSelection, revenueFlowModel, ribbonPath } from "./revenue-flow.js";
 
 const source = await readFile(new URL("./revenue-flow.js", import.meta.url), "utf8");
+const styles = await readFile(new URL("./styles.css", import.meta.url), "utf8");
 
 function metric(id, name, unit, values, extra = {}) {
   return {
@@ -138,7 +139,7 @@ test("right-side ribbons are cubic beziers with a long horizontal pull", () => {
 });
 
 test("the flow uses every reported line and balances with Other", () => {
-  const model = revenueFlowModel("ACME", full, null, {});
+  const model = revenueFlowModel("ACME", full, null, { year: 2025 });
   assert.equal(model.selection.year, 2025);
   assert.equal(model.selection.quarter, null);
   assert.equal(model.periods[0].quarters.join(""), "1234");
@@ -159,7 +160,7 @@ test("the flow uses every reported line and balances with Other", () => {
   assert.equal(revenueBalance.gap, 0);
   assert.equal(model.nodes.some((node) => node.id === "other:revenue"), false);
   assert.equal(model.cards.map((card) => card.label).sort().join(","), "Deliveries,Production");
-  const layout = layoutRevenueFlow(model);
+  const layout = layoutRevenueFlow(model, { width: 2400 });
   const strong = layout.links.filter((link) => link.strong);
   assert.ok(strong.length >= 4);
   assert.ok(strong.every((link) => link.d.includes(" C ")));
@@ -224,7 +225,7 @@ test("a quarter compares with the same quarter last year and can return to the y
       metric("total_deliveries", "Deliveries", "vehicles", { "2025Q1": 50 }, { category: "operating" }),
     ],
   };
-  const latest = revenueFlowModel("BETA", payload, null, {});
+  const latest = revenueFlowModel("BETA", payload, null, { year: 2025 });
   assert.equal(latest.ticker, "BETA");
   assert.equal(latest.selection.year, 2025);
   assert.equal(latest.selection.quarter, null);
@@ -242,7 +243,7 @@ test("a quarter compares with the same quarter last year and can return to the y
   assert.equal(yearView.selection.quarter, null);
   const skipped = revenueFlowModel("BETA", payload, null, { year: 2025, quarter: 4 });
   assert.equal(skipped.selection.quarter, null);
-  assert.equal(resolveSelection(latest.periods, {}).year, 2025);
+  assert.deepEqual(resolveSelection(latest.periods, {}), { year: 2025, quarter: 2 });
   let picked = null;
   const view = renderRevenueFlow(quarter, fakeDocument(), {
     onSelect(year, quarterId) { picked = [year, quarterId]; },
@@ -291,7 +292,7 @@ test("year and quarter dropdowns list only periods with data", () => {
       }),
     ],
   };
-  const latest = revenueFlowModel("ACME", payload, null, {});
+  const latest = revenueFlowModel("ACME", payload, null, { year: 2026 });
   assert.equal(latest.selection.year, 2026);
   assert.equal(latest.selection.quarter, null);
   assert.equal(latest.header, "ACME FY2026");
@@ -430,6 +431,164 @@ test("a placeholder quarter does not flatten the year-over-year change", () => {
   assert.equal(revenue.value, 70);
   assert.match(revenue.changeText, /▲100%/);
   assert.match(model.subtitle, /Where the money went · Q1–Q3 FY2026 \+ Q4 placeholder · ▲▼ changes vs\. Q1–Q3 FY2025/);
+});
+
+function fitsContainer(model, width) {
+  const layout = layoutRevenueFlow(model, { width });
+  assert.ok(layout.width <= width, `layout ${layout.width} > ${width}`);
+  assert.equal(layout.width, width);
+  for (const node of layout.nodes) {
+    assert.ok(node.x >= -0.1, node.id);
+    assert.ok(node.x + node.w <= layout.width + 0.1, `${node.id} right ${node.x + node.w}`);
+    for (const row of node.rows) {
+      const text = row.change ? `${row.text} ${row.change}` : row.text;
+      assert.ok(flowTextWidth(text, row.font) <= node.budget + 0.5, `${node.label} “${text}”`);
+    }
+    for (const line of node.noteLines || []) {
+      assert.ok(flowTextWidth(line, 12) <= node.budget + 0.5, line);
+    }
+  }
+  for (const link of layout.links) {
+    assert.ok(link.x1 >= -0.1 && link.x2 >= -0.1, `${link.from}->${link.to}`);
+    assert.ok(link.x1 <= layout.width + 0.1 && link.x2 <= layout.width + 0.1, `${link.from}->${link.to}`);
+  }
+  return layout;
+}
+
+test("the chart width stays inside the panel for the year and a quarter", () => {
+  const year = revenueFlowModel("ACME", full, null, { year: 2025 });
+  const quarter = revenueFlowModel("ACME", full, null, { year: 2025, quarter: 1 });
+  for (const width of [1024, 1280, 1440]) {
+    fitsContainer(year, width);
+    fitsContainer(quarter, width);
+  }
+  const view = renderRevenueFlow(year, fakeDocument(), { width: 1280 });
+  let chart = null;
+  walk(view, (item) => {
+    if (String(item.className || "").split(/\s+/).includes("flow-chart")) chart = item;
+  });
+  assert.equal(chart.getAttribute("width"), "100%");
+  const boxWidth = Number(chart.getAttribute("viewBox").split(/\s+/)[2]);
+  assert.ok(boxWidth <= 1280);
+  const sankey = styles.slice(styles.indexOf("/* Revenue flow matches"));
+  assert.doesNotMatch(sankey, /#[0-9a-fA-F]{3,8}\b/);
+  const scroll = sankey.match(/\.revenue-flow \.flow-scroll\s*\{[^}]*\}/)[0];
+  assert.match(scroll, /overflow:\s*hidden/);
+  assert.doesNotMatch(scroll, /overflow-x:\s*auto/);
+  const chartRule = sankey.match(/\.revenue-flow \.flow-chart\s*\{[^}]*\}/)[0];
+  assert.match(chartRule, /width:\s*100%/);
+  assert.match(chartRule, /max-width:\s*100%/);
+  assert.match(chartRule, /min-width:\s*0/);
+  const name = sankey.match(/\.revenue-flow \.flow-name\s*\{[^}]*\}/)[0];
+  const amount = sankey.match(/\.revenue-flow \.flow-amount\s*\{[^}]*\}/)[0];
+  const cardLabel = sankey.match(/\.revenue-flow \.flow-card-label\s*\{[^}]*\}/)[0];
+  const cardValue = sankey.match(/\.revenue-flow \.flow-card-value\s*\{[^}]*\}/)[0];
+  const cardChange = sankey.match(/\.revenue-flow \.flow-card-value \.flow-change\s*\{[^}]*\}/)[0];
+  for (const rule of [name, amount, cardLabel, cardValue, cardChange]) {
+    const size = Number(rule.match(/font-size:\s*(\d+(?:\.\d+)?)px/)[1]);
+    assert.ok(size >= 12, rule);
+  }
+  assert.ok(Number(cardValue.match(/font-size:\s*(\d+)/)[1]) < 28);
+});
+
+test("source notes sit in a keyboard-reachable tooltip instead of the footer line", () => {
+  const model = revenueFlowModel("ACME", full, null, {});
+  const view = renderRevenueFlow(model, fakeDocument(), { width: 1024 });
+  let tip = null;
+  let button = null;
+  const footnotes = [];
+  walk(view, (item) => {
+    if (item.getAttribute?.("role") === "tooltip") tip = item;
+    if (String(item.className || "").split(/\s+/).includes("flow-source-button")) button = item;
+    if (String(item.className || "").split(/\s+/).includes("flow-footnote")) footnotes.push(item);
+  });
+  assert.equal(footnotes.length, 0);
+  assert.match(tip.textContent, /Source: company filings and SEC XBRL/);
+  assert.equal(button.tagName, "BUTTON");
+  assert.equal(button.getAttribute("type"), "button");
+  assert.equal(button.getAttribute("aria-describedby"), tip.getAttribute("id"));
+  assert.equal(button.getAttribute("aria-label"), "Source notes");
+  let nodeTitle = "";
+  walk(view, (item) => {
+    if (item.tagName === "TITLE" && /Gross profit/.test(item.textContent || "")) nodeTitle = item.textContent;
+  });
+  assert.match(nodeTitle, /Gross profit/);
+  assert.match(nodeTitle, /margin/);
+});
+
+test("an empty selection uses the latest reported quarter for that ticker", () => {
+  const withForecast = (periods, forecast) => ({
+    metrics: [metric("revenue_gaap", "Revenue", "USD", periods)],
+    deep_dive: {
+      forecast: {
+        segments: [{
+          label: "Revenue",
+          metrics: [{
+            metric_id: "revenue_gaap",
+            unit: "USD",
+            approval_state: "approved",
+            forecast,
+          }],
+        }],
+      },
+    },
+  });
+  const first = revenueFlowModel("ACME", withForecast({
+    "2026Q1": 10, "2026Q2": 11, "2026Q3": 12,
+  }, [
+    { fiscal_period: "2027Q1", value: 13, reported: true },
+  ]), null, {});
+  assert.deepEqual(first.periods.at(-1).activeQuarters, []);
+  assert.deepEqual(first.periods.at(-1).quarters, [1]);
+  assert.deepEqual(first.selection, { year: 2026, quarter: 3 });
+  assert.equal(first.header, "ACME FY2026 Q3");
+  assert.equal(first.nodes.find((node) => node.id === "revenue").value, 12);
+  const firstView = renderRevenueFlow(first, fakeDocument(), {});
+  const firstPicker = periodControls(firstView);
+  assert.equal(firstPicker.yearOptions.find((item) => item.selected).value, "2026");
+  assert.equal(firstPicker.quarterOptions.find((item) => item.selected).label, "Q3");
+
+  const second = revenueFlowModel("BETA", withForecast({
+    "2025Q4": 8, "2027Q2": 9,
+  }, [
+    { fiscal_period: "2028Q1", value: 10, reported: true },
+  ]), null, {});
+  assert.deepEqual(second.selection, { year: 2027, quarter: 2 });
+  assert.deepEqual(latestDataQuarter(second.periods), { year: 2027, quarter: 2 });
+  assert.notDeepEqual(first.selection, second.selection);
+
+  const fullYear = revenueFlowModel("ACME", withForecast({ "2026Q3": 12 }, []), null, { year: 2026, quarter: null });
+  assert.deepEqual(fullYear.selection, { year: 2026, quarter: null });
+  const missingQuarter = revenueFlowModel("BETA", withForecast({ "2027Q2": 9 }, []), null, { year: 2027, quarter: 4 });
+  assert.deepEqual(missingQuarter.selection, { year: 2027, quarter: null });
+  const staleYear = revenueFlowModel("BETA", withForecast({ "2027Q2": 9 }, []), null, { year: 2030, quarter: 1 });
+  assert.deepEqual(staleYear.selection, { year: 2027, quarter: 2 });
+
+  const estimatesOnly = revenueFlowModel("GAMMA", {
+    metrics: [],
+    deep_dive: {
+      forecast: {
+        segments: [{
+          label: "Revenue",
+          metrics: [{
+            metric_id: "revenue_gaap",
+            display_name: "Revenue",
+            unit: "USD",
+            approval_state: "approved",
+            forecast: [{ fiscal_period: "2027Q1", value: 5, reported: true }],
+          }],
+        }],
+      },
+    },
+  }, null, {});
+  assert.deepEqual(estimatesOnly.selection, { year: 2027, quarter: 1 });
+  assert.equal(estimatesOnly.empty, false);
+
+  const none = revenueFlowModel("DELTA", { metrics: [] }, null, {});
+  assert.deepEqual(none.selection, { year: null, quarter: null });
+  assert.equal(latestDataQuarter([]), null);
+  assert.deepEqual(resolveSelection(null, {}), { year: null, quarter: null });
+  assert.doesNotMatch(source, /TSLA|SPCX|NVDA|AAPL/);
 });
 
 test("no income-statement periods leave an empty state", () => {

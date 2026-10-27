@@ -49,7 +49,13 @@ import {
   stockTabs,
   visibleStockTab,
 } from "./stock-page.js";
-import { hasDeepDive, renderDeepDive, renderTrendDisclaimer, revealDeepDiveSection } from "./deep-dive.js";
+import { hasDeepDive, renderDeepDive, revealDeepDiveSection } from "./deep-dive.js";
+import {
+  applyOverviewSideColumn,
+  readOverviewSideCollapsed,
+  resizeOverviewCharts,
+  writeOverviewSideCollapsed,
+} from "./overview-side.js";
 import { companyBookmarks, renderCompanyBookmarks, revealCompanySection, sectionSlug } from "./company-sections.js";
 import { curveView, fomcView, policyPathView, sparklinePath } from "./rates-panel.js";
 import {
@@ -2515,12 +2521,13 @@ function renderCatalystRow(event, tickerData, { calendarId = false, link = false
   dot.setAttribute("aria-hidden", "true");
   const name = node("span", "catalyst-recent-name", view.name);
   name.title = view.name;
-  title.append(dot, node("span", "visually-hidden", label), name);
+  title.append(dot, node("span", "visually-hidden", label));
   if (news && view.publisher) {
-    const publisher = node("span", "catalyst-recent-publisher", view.publisher);
-    publisher.title = view.publisher;
-    title.append(publisher);
+    const source = node("span", "news-source-badge", view.publisher);
+    source.title = view.publisher;
+    title.append(source);
   }
+  title.append(name);
   const move = node("span", `catalyst-recent-move mono ${view.tone}`, view.trailingText);
   move.setAttribute("aria-label", view.trailingLabel);
   button.append(date, title);
@@ -3970,6 +3977,7 @@ function mountRevenueFlow(ticker, payload, chartData) {
     onSelect(year, quarter) {
       session.revenueFlowSelection[ticker] = { year, quarter };
       const next = mountRevenueFlow(ticker, payload, chartData);
+      panel.querySelector(".flow-scroll")?.dispatchEvent(new CustomEvent("flow-disconnect"));
       panel.replaceWith(next);
     },
   });
@@ -4276,7 +4284,7 @@ function tagTrendSection(element, id) {
   return element;
 }
 
-function renderTrendsLayout(tickerData, chartData, chartDataState, payload) {
+function renderTrendsLayout(tickerData, chartData, chartDataState) {
   const present = [];
   const mark = (element, id) => {
     if (!tagTrendSection(element, id)) return;
@@ -4288,8 +4296,6 @@ function renderTrendsLayout(tickerData, chartData, chartDataState, payload) {
   layout.id = `stock-panel-${OVERVIEW_TAB_ID}`;
   layout.setAttribute("aria-label", `${session.selected} Overview`);
   const primary = node("div", "primary-column");
-  const notice = renderTrendDisclaimer(payload, document);
-  if (notice) primary.append(notice);
   const chart = renderChartPanel("dashboard", session.selected);
   chart.querySelector("[data-company-page]")?.remove();
   mark(chart, "price");
@@ -4319,7 +4325,24 @@ function renderTrendsLayout(tickerData, chartData, chartDataState, payload) {
     primary.append(contracts);
   }
   const side = node("aside", "side-column");
+  side.id = "overview-side-column";
   side.setAttribute("aria-label", "Macro drivers, news and filings");
+  const sideToggle = node("button", "overlay-chip side-column-toggle");
+  sideToggle.dataset.sideToggle = "macro";
+  const syncSide = (collapsed) => {
+    applyOverviewSideColumn(layout, side, sideToggle, collapsed);
+    resizeOverviewCharts(layout, window);
+  };
+  syncSide(readOverviewSideCollapsed(localPrefs));
+  sideToggle.addEventListener("click", () => {
+    const collapsed = layout.dataset.sideCollapsed !== "true";
+    writeOverviewSideCollapsed(localPrefs, collapsed);
+    syncSide(collapsed);
+    sideToggle.focus({ preventScroll: true });
+  });
+  const toggleRow = node("div", "overview-side-toggle-row");
+  toggleRow.append(sideToggle);
+  primary.prepend(toggleRow);
   const news = renderNews(tickerData), filings = renderFilings(tickerData);
   if (news) news.dataset.mobilePanel = "more";
   if (filings) filings.dataset.mobilePanel = "more";
