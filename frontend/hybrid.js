@@ -1,4 +1,6 @@
 import { loadReports, renderDataHealth } from "./data-health.js";
+import { logsRequest, readFilters, renderFilterBar, writeFilters } from "./ops-filters.js";
+import { mergeEntries, renderLogs } from "./ops-logs.js";
 import { OPS_TABS, searchWithTab, tabFromSearch } from "./ops-tabs.js";
 import { applyTheme } from "./theme.js";
 
@@ -8,6 +10,9 @@ const cards = document.querySelector("#cards");
 const routes = document.querySelector("#routes");
 const audit = document.querySelector("#audit");
 const health = document.querySelector("#health");
+const logsRoot = document.querySelector("#logs");
+let logEntries = [];
+let searchTimer = 0;
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -40,6 +45,65 @@ function render(state) {
   }</tbody></table>` : `<p class="muted">No requests yet. Open the market dashboard or call /api/v1/status.</p>`;
 }
 
+function filtersFromForm(form) {
+  const data = new FormData(form);
+  return {
+    backends: data.getAll("backend"),
+    range: form.getAttribute("data-range") || "15m",
+    from: data.get("from") || "",
+    to: data.get("to") || "",
+    q: data.get("q") || "",
+    level: data.get("level") || "",
+    live: Boolean(form.querySelector('[name="live"]')?.checked),
+  };
+}
+
+function paintLogs() {
+  if (!logsRoot) return;
+  const filters = readFilters(location.search);
+  logsRoot.innerHTML = `${renderFilterBar(filters, { level: true, live: true })}<div id="logs-results"></div>`;
+  const form = logsRoot.querySelector("form");
+  form.addEventListener("change", (event) => {
+    if (event.target.name === "q") return;
+    pushFilters(filtersFromForm(form));
+  });
+  form.querySelector('[name="q"]').addEventListener("input", (event) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => pushFilters({ ...filtersFromForm(form), q: event.target.value }), 300);
+  });
+  form.querySelectorAll("[data-range]").forEach((button) => {
+    button.addEventListener("click", () => {
+      pushFilters({ ...filtersFromForm(form), range: button.getAttribute("data-range") });
+    });
+  });
+  logsRoot.querySelector("#logs-results").addEventListener("click", (event) => {
+    const more = event.target.closest("#logs-more");
+    if (more) loadLogs(more.getAttribute("data-cursor"));
+  });
+}
+
+function pushFilters(patch) {
+  const next = writeFilters(location.search, patch);
+  history.replaceState(null, "", `${location.pathname}${next}`);
+  logEntries = [];
+  paintLogs();
+  loadLogs();
+}
+
+async function loadLogs(cursor) {
+  const results = document.querySelector("#logs-results");
+  if (!results) return;
+  try {
+    const response = await fetch(logsRequest(readFilters(location.search), cursor || ""));
+    if (!response.ok) throw new Error(String(response.status));
+    const page = await response.json();
+    logEntries = cursor ? mergeEntries(logEntries, page.entries || []) : (page.entries || []);
+    results.innerHTML = renderLogs({ ...page, entries: logEntries });
+  } catch (error) {
+    results.innerHTML = `<p class="muted">Logs are not reachable (${esc(error.message)}).</p>`;
+  }
+}
+
 function showTab(tab) {
   const selected = OPS_TABS.includes(tab) ? tab : "ops";
   for (const name of OPS_TABS) {
@@ -47,6 +111,10 @@ function showTab(tab) {
     const button = document.querySelector(`[data-tab="${name}"]`);
     if (panel) panel.hidden = name !== selected;
     if (button) button.setAttribute("aria-selected", name === selected ? "true" : "false");
+  }
+  if (selected === "logs" && logsRoot && !logsRoot.querySelector("form")) {
+    paintLogs();
+    loadLogs();
   }
 }
 
@@ -71,6 +139,7 @@ async function tick() {
     } catch (error) {
       health.innerHTML = `<p class="muted">Data health is not reachable (${esc(error.message)}).</p>`;
     }
+    if (tabFromSearch(location.search) === "logs" && readFilters(location.search).live) loadLogs();
   } catch (error) {
     cards.innerHTML = `<p class="muted">Facade state is not reachable (${esc(error.message)}). Start it with <span class="metric">make demo</span>.</p>`;
     health.innerHTML = `<p class="muted">Data health needs the facade (${esc(error.message)}).</p>`;

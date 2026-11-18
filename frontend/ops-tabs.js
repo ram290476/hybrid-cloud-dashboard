@@ -1,4 +1,4 @@
-export const OPS_TABS = ["ops", "health"];
+export const OPS_TABS = ["ops", "health", "logs"];
 
 export function tabFromSearch(search) {
   const params = new URLSearchParams(String(search || "").replace(/^\?/, ""));

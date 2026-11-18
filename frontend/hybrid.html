@@ -38,6 +38,24 @@
       .job.bad { color: var(--red); }
       .job.warn { color: var(--amber); }
       .collectors, .warnings { margin: 8px 0 0; padding-left: 18px; }
+      .ops-filters { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; margin-bottom: 14px; }
+      .ops-filters fieldset { border: 1px solid var(--line); border-radius: 8px; display: flex; gap: 10px; padding: 8px 10px; }
+      .ops-filters legend { padding: 0 4px; color: var(--muted); }
+      .ops-filters label { display: flex; gap: 6px; align-items: center; color: var(--text); }
+      .ranges { display: flex; gap: 6px; }
+      .ranges button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+      .ranges button[aria-pressed="true"] { color: var(--text); border-color: var(--blue); }
+      .ops-filters .custom-range { display: none; }
+      .ops-filters[data-range="custom"] .custom-range { display: flex; }
+      .badge.level-error, .level-error { color: var(--red); }
+      .badge.level-warn, .level-warn { color: var(--amber); }
+      .badge.level-info { color: var(--blue); }
+      .badge.level-debug { color: var(--muted); }
+      tr.log-gcp td:nth-child(2) { color: var(--blue); }
+      tr.log-aws td:nth-child(2) { color: var(--green); }
+      tr.log-azure td:nth-child(2) { color: var(--amber); }
+      tr.log-facade td:nth-child(2) { color: var(--text); }
+      .logs pre { white-space: pre-wrap; }
       @media (max-width: 800px) {
         .ops-grid { grid-template-columns: 1fr; }
         .ops-head { flex-direction: column; align-items: flex-start; }
@@ -58,6 +76,7 @@
       <nav class="ops-tabs" role="tablist" aria-label="Operations">
         <button type="button" role="tab" id="tab-ops" data-tab="ops" aria-selected="true" aria-controls="panel-ops">Operations</button>
         <button type="button" role="tab" id="tab-health" data-tab="health" aria-selected="false" aria-controls="panel-health">Data health</button>
+        <button type="button" role="tab" id="tab-logs" data-tab="logs" aria-selected="false" aria-controls="panel-logs">Logs</button>
       </nav>
       <div id="panel-ops" role="tabpanel" aria-labelledby="tab-ops">
         <section id="cards" class="ops-grid" aria-live="polite"></section>
@@ -72,6 +91,9 @@
       </div>
       <div id="panel-health" role="tabpanel" aria-labelledby="tab-health" hidden>
         <div id="health" aria-live="polite"></div>
+      </div>
+      <div id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
+        <div id="logs"></div>
       </div>
     </main>
   </body>

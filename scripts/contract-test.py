@@ -191,13 +191,14 @@ def main() -> None:
         "/api/v1/stock/{ticker}",
         "/api/v1/fund/{ticker}",
         "/api/v1/prefs",
+        "/ops/logs",
         "/healthz",
         "/readyz",
         "/version",
     ):
         if path not in spec:
             raise SystemExit(f"openapi missing {path}")
-    for token in ("getDataHealth", "getStock", "getFund", "DataHealth", "fresh_within_seconds", "DataHealthCollector"):
+    for token in ("getDataHealth", "getOpsLogs", "getStock", "getFund", "DataHealth", "OpsLogs", "fresh_within_seconds", "DataHealthCollector"):
         if token not in spec:
             raise SystemExit(f"openapi missing {token}")
     dashboard = json.loads((ROOT / "contract/fixtures/serving/dashboard.json").read_text())

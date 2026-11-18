@@ -6,13 +6,14 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ram290476/hybrid-cloud-dashboard/backends/go-gcp/internal/store"
 	"github.com/ram290476/hybrid-cloud-dashboard/libs/devjwt"
 	"github.com/ram290476/hybrid-cloud-dashboard/libs/merge"
+	"github.com/ram290476/hybrid-cloud-dashboard/libs/otellog"
 )
 
 // Server is the Go backend. The same routes exist in the Python and .NET services.
@@ -40,27 +41,50 @@ func (s *Server) now() time.Time {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := s.now()
-	s.headers(w)
+	rec := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+	s.headers(rec)
 	switch {
 	case r.URL.Path == "/healthz":
-		writeJSON(w, http.StatusOK, s.identity("ok"))
+		writeJSON(rec, http.StatusOK, s.identity("ok"))
 	case r.URL.Path == "/readyz":
 		if err := s.Store.Ready(r.Context()); err != nil {
-			writeProblem(w, http.StatusServiceUnavailable, err.Error())
+			writeProblem(rec, http.StatusServiceUnavailable, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		writeJSON(rec, http.StatusOK, map[string]string{"status": "ready"})
 	case r.URL.Path == "/version":
-		writeJSON(w, http.StatusOK, s.identity("ok"))
+		writeJSON(rec, http.StatusOK, s.identity("ok"))
 	case strings.HasPrefix(r.URL.Path, "/api/"):
-		s.api(w, r, start)
+		s.api(rec, r)
+		s.emit(r, rec.status)
 	default:
-		writeProblem(w, http.StatusNotFound, "not found")
+		writeProblem(rec, http.StatusNotFound, "not found")
 	}
 }
 
-func (s *Server) api(w http.ResponseWriter, r *http.Request, start time.Time) {
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (s *statusWriter) WriteHeader(code int) {
+	if s.wrote {
+		return
+	}
+	s.status = code
+	s.wrote = true
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusWriter) Write(body []byte) (int, error) {
+	if !s.wrote {
+		s.WriteHeader(http.StatusOK)
+	}
+	return s.ResponseWriter.Write(body)
+}
+
+func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	if s.FacadeKey != "" && r.Header.Get("x-facade-key") != s.FacadeKey {
 		writeProblem(w, http.StatusForbidden, "missing facade key")
 		return
@@ -93,7 +117,6 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, start time.Time) {
 	default:
 		writeProblem(w, http.StatusNotFound, "not found")
 	}
-	s.log(r, start)
 }
 
 func (s *Server) object(w http.ResponseWriter, r *http.Request, key string) {
@@ -214,13 +237,24 @@ func (s *Server) identity(status string) map[string]string {
 	}
 }
 
-func (s *Server) log(r *http.Request, start time.Time) {
-	line, _ := json.Marshal(map[string]any{
-		"ts": s.now().UTC().Format(time.RFC3339Nano), "level": "info", "msg": "request",
-		"route": r.URL.Path, "method": r.Method, "backend": s.Backend, "color": s.Color,
-		"duration_ms": s.now().Sub(start).Milliseconds(), "request_id": r.Header.Get("x-request-id"),
+func (s *Server) emit(r *http.Request, status int) {
+	level := "info"
+	if status >= 500 {
+		level = "error"
+	} else if status >= 400 {
+		level = "warn"
+	}
+	otellog.Emit(otellog.Event{
+		Timestamp: s.now().UTC().Format(time.RFC3339Nano),
+		Level:     level,
+		Backend:   s.Backend,
+		Cloud:     cloudOf(s.Backend),
+		Color:     s.Color,
+		Route:     r.URL.Path,
+		Status:    status,
+		TraceID:   otellog.TraceID(r.Header.Get("traceparent"), r.Header.Get("x-request-id")),
+		Message:   r.Method + " " + r.URL.Path + " " + strconv.Itoa(status),
 	})
-	_, _ = os.Stdout.Write(append(line, '\n'))
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

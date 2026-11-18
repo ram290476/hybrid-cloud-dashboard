@@ -96,6 +96,7 @@ spec:
         image: grafana/otel-lgtm:0.11.0
         ports:
         - containerPort: 3000
+        - containerPort: 3100
         - containerPort: 4317
         - containerPort: 4318
         resources:
@@ -111,6 +112,8 @@ spec:
   ports:
   - name: grafana
     port: 3000
+  - name: loki
+    port: 3100
   - name: otlp-grpc
     port: 4317
   - name: otlp-http

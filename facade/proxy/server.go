@@ -15,13 +15,16 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/health"
+	"github.com/ram290476/hybrid-cloud-dashboard/facade/logs"
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/policy"
 	"github.com/ram290476/hybrid-cloud-dashboard/libs/devjwt"
+	"github.com/ram290476/hybrid-cloud-dashboard/libs/otellog"
 )
 
 // Audit is one Section 13.6 record.
@@ -123,6 +126,8 @@ type Server struct {
 	Audience   string
 	DevInject  bool
 	Frontend   string
+	Logs       logs.Source
+	Remember   func(logs.Entry)
 	Now        func() time.Time
 	// Pick, when set, replaces the random weight draw. Tests use it.
 	Pick *float64
@@ -142,11 +147,12 @@ type Server struct {
 
 // New builds a server. Call Evaluate once before serving traffic.
 func New(doc policy.Document, hash string) *Server {
+	mem := logs.NewMemory(500)
 	s := &Server{
 		Doc: doc, ConfigHash: hash, Checker: health.New(),
 		Client: &http.Client{Timeout: 5 * time.Second},
 		Salt:   "hcd-local-salt", Issuer: "http://localhost/dev-auth", Audience: "hcd-local",
-		Now: time.Now,
+		Now: time.Now, Logs: mem, Remember: mem.Add,
 		obs: map[string]policy.Observation{}, weights: map[string]map[string]int{},
 		reasons: map[string]string{}, skipped: map[string][]policy.Skip{},
 		scores: map[string]map[string]float64{}, lastChange: map[string]time.Time{},
@@ -309,11 +315,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveDataHealth(w, r)
 	case r.URL.Path == "/api/v1/facade/rollout" && r.Method == http.MethodPost:
 		s.handleRollout(w, r)
+	case r.URL.Path == "/ops/logs" && r.Method == http.MethodGet:
+		s.serveLogs(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		s.proxy(w, r)
 	default:
 		s.static(w, r)
 	}
+}
+
+func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
+	query, err := logs.ParseQuery(r.URL.Query(), s.Now())
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.Logs == nil {
+		writeJSON(w, http.StatusOK, logs.Page{Source: "memory", Entries: []logs.Entry{}})
+		return
+	}
+	page, err := s.Logs.Query(r.Context(), query)
+	if err != nil {
+		writeProblem(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }
 
 // serveDataHealth calls one named backend. It does not use routing weights and
@@ -547,6 +573,7 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	s.record(served, lastStatus, lastErr, len(respBody), start)
 	record := s.auditRecord(r, requestID, traceID, route, reason, served, weights, scores, skipped, priors, attempts, lastStatus, lastErr, respHeader, start)
 	s.pushAudit(record)
+	s.noteRequest(r, served, lastStatus, traceID)
 	if lastStatus == 0 {
 		writeProblem(w, http.StatusBadGateway, "no healthy backend")
 		return
@@ -565,6 +592,43 @@ func (s *Server) proxy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-route-config", s.ConfigHash)
 	w.WriteHeader(lastStatus)
 	_, _ = w.Write(respBody)
+}
+
+func (s *Server) noteRequest(r *http.Request, backend string, status int, traceID string) {
+	if status == 0 {
+		status = http.StatusBadGateway
+	}
+	level := "info"
+	if status >= 500 {
+		level = "error"
+	} else if status >= 400 {
+		level = "warn"
+	}
+	message := r.Method + " " + r.URL.Path + " " + strconv.Itoa(status)
+	when := s.Now().UTC().Format(time.RFC3339Nano)
+	line := otellog.Event{
+		Timestamp: when, Level: level, Backend: "facade", Cloud: "local", Color: "blue",
+		Route: r.URL.Path, Status: status, TraceID: traceID, Message: message + " via " + backend,
+	}
+	otellog.Emit(line)
+	if s.Remember == nil {
+		return
+	}
+	s.Remember(logEntry(line))
+	if backend != "" && backend != "facade" {
+		upstream := line
+		upstream.Backend = backend
+		upstream.Cloud = cloudOf(backend)
+		upstream.Message = message
+		s.Remember(logEntry(upstream))
+	}
+}
+
+func logEntry(ev otellog.Event) logs.Entry {
+	return logs.Entry{
+		Timestamp: ev.Timestamp, Level: ev.Level, Backend: ev.Backend, Cloud: ev.Cloud,
+		Color: ev.Color, Route: ev.Route, Status: ev.Status, TraceID: ev.TraceID, Message: ev.Message,
+	}
 }
 
 func (s *Server) forward(r *http.Request, name string, body []byte, requestID string, route policy.Route, reason string) (int, http.Header, []byte, string) {
