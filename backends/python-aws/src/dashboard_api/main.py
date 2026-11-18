@@ -47,6 +47,9 @@ def _seed() -> None:
         "serving/status.json",
         "serving/chart/TSLA.json",
         "serving/chart/SPCX.json",
+        "serving/stock/TSLA.json",
+        "serving/stock/SPCX.json",
+        "serving/funds/ARKK.json",
     ):
         path = FIXTURES / key
         if path.exists():
@@ -170,6 +173,22 @@ def chart(ticker: str, request: Request) -> Response:
     if isinstance(guard, JSONResponse):
         return guard
     return _object(f"serving/chart/{ticker}.json")
+
+
+@app.get("/api/v1/stock/{ticker}")
+def stock(ticker: str, request: Request) -> Response:
+    guard = _guard(request)
+    if isinstance(guard, JSONResponse):
+        return guard
+    return _object(f"serving/stock/{ticker}.json")
+
+
+@app.get("/api/v1/fund/{ticker}")
+def fund(ticker: str, request: Request) -> Response:
+    guard = _guard(request)
+    if isinstance(guard, JSONResponse):
+        return guard
+    return _object(f"serving/funds/{ticker}.json")
 
 
 @app.get("/api/v1/prefs")

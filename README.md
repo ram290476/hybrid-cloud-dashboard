@@ -64,7 +64,19 @@ make local-seed          # sets dummy AWS creds itself and seeds fake-gcs, Seawe
 make contract-test
 ```
 
-`tilt up` re-applies the local manifests and recreates the `hcd-deps` pods. Those emulators keep data in memory or on an emptyDir, so a seed that ran before Tilt is wiped, and `make pf-emulators` forwards bound to the old pods stop. Seed only after Tilt has created the emulator pods. If a later Tilt restart rolls those pods, run `make pf-emulators` and `make local-seed` again.
+To load the investor-dashboard serving snapshot into the same three local stores, point `DASH_BUCKET` at that bucket and export the AWS profile and region. Nothing in the repo names the bucket, the profile, or an account. The import lists and gets objects only. It does not write to AWS.
+
+```bash
+export DASH_BUCKET=<investor-dashboard serving bucket>
+export AWS_PROFILE=<profile with read access>
+export AWS_REGION=<bucket region>
+make pf-emulators
+make dash-import
+```
+
+`make dash-import` copies `serving/dashboard.json`, `serving/status.json`, `serving/chart_data/*.json` (stored locally as `serving/chart/*.json`), `serving/stock/*.json`, and `serving/funds/*.json` into `hcd-serving` on SeaweedFS (`127.0.0.1:9000`), fake-gcs (`127.0.0.1:4443`), and Azurite (`127.0.0.1:10000`). It skips `*.gz`, parquet, `_lease`, and `_debounce` objects. `S3_ENDPOINT`, `GCS_EMULATOR_HOST`, and `AZURE_BLOB_ENDPOINT` override those local addresses the same way `make local-seed` does.
+
+`tilt up` re-applies the local manifests and recreates the `hcd-deps` pods. SeaweedFS, DynamoDB, Firestore, and Cosmos keep data in memory or on an emptyDir, so a seed that ran before Tilt is wiped on those, and `make pf-emulators` forwards bound to the old pods stop. fake-gcs and Azurite keep their files on the kind node, so a pod restart keeps those two. Seed only after Tilt has created the emulator pods. If a later Tilt restart rolls the pods, run `make pf-emulators` again, then `make local-seed` (and `make dash-import` when SeaweedFS was recreated).
 
 The Go and Python `/readyz` probes create the GCS bucket, the S3 bucket, and the DynamoDB prefs table when they are missing, the same way the .NET probe creates its blob container. That lets the APIs become Ready on a fresh emulator. Fixture objects still come from `make local-seed`.
 

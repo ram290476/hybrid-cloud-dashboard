@@ -1,0 +1,14 @@
+{
+  "ticker": "ARKK",
+  "schema_version": 1,
+  "data_version": "fixture-2026.10.09",
+  "status": "ready",
+  "fund_name": "ARK Innovation ETF",
+  "holdings_source": "sec_nport",
+  "holdings_as_of": "2026-09-30",
+  "holdings_count": 1,
+  "net_assets_usd": 8000000000,
+  "holdings": [
+    {"ticker": "TSLA", "name": "Tesla", "pct_nav": 12.5, "value_usd": 1000000}
+  ]
+}

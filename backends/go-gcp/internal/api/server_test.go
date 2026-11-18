@@ -21,7 +21,7 @@ func newServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	mem := store.NewMemory()
 	root := filepath.Join("..", "..", "..", "..", "contract", "fixtures")
-	for _, key := range []string{"serving/dashboard.json", "serving/status.json", "serving/chart/TSLA.json"} {
+	for _, key := range []string{"serving/dashboard.json", "serving/status.json", "serving/chart/TSLA.json", "serving/stock/TSLA.json", "serving/funds/ARKK.json"} {
 		body, err := os.ReadFile(filepath.Join(root, key))
 		if err != nil {
 			t.Fatal(err)
@@ -60,6 +60,53 @@ func TestDashboardMatchesFixture(t *testing.T) {
 	want, _ := os.ReadFile(filepath.Join("..", "..", "..", "..", "contract", "fixtures", "serving", "dashboard.json"))
 	if !jsonEqual(rec.Body.Bytes(), want) {
 		t.Fatalf("got %s", rec.Body.String())
+	}
+}
+
+func TestStockAndFundMatchChart(t *testing.T) {
+	srv, token := newServer(t)
+	chart := call(t, srv, http.MethodGet, "/api/v1/chart/TSLA", token, nil)
+	stock := call(t, srv, http.MethodGet, "/api/v1/stock/TSLA", token, nil)
+	fund := call(t, srv, http.MethodGet, "/api/v1/fund/ARKK", token, nil)
+	if chart.Code != http.StatusOK || stock.Code != http.StatusOK || fund.Code != http.StatusOK {
+		t.Fatalf("chart %d stock %d fund %d", chart.Code, stock.Code, fund.Code)
+	}
+	for _, header := range []string{"content-type", "x-backend-env", "x-backend-lang", "x-backend-runtime", "x-app-color", "x-app-version", "x-data-version", "access-control-allow-origin", "access-control-allow-headers", "access-control-allow-methods"} {
+		if stock.Header().Get(header) != chart.Header().Get(header) || fund.Header().Get(header) != chart.Header().Get(header) {
+			t.Fatalf("%s chart %q stock %q fund %q", header, chart.Header().Get(header), stock.Header().Get(header), fund.Header().Get(header))
+		}
+	}
+	if chart.Header().Get("content-type") != "application/json" {
+		t.Fatalf("content-type %s", chart.Header().Get("content-type"))
+	}
+	root := filepath.Join("..", "..", "..", "..", "contract", "fixtures", "serving")
+	wantStock, err := os.ReadFile(filepath.Join(root, "stock", "TSLA.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFund, err := os.ReadFile(filepath.Join(root, "funds", "ARKK.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jsonEqual(stock.Body.Bytes(), wantStock) || !jsonEqual(fund.Body.Bytes(), wantFund) {
+		t.Fatalf("stock %s fund %s", stock.Body.String(), fund.Body.String())
+	}
+	missing := call(t, srv, http.MethodGet, "/api/v1/stock/NOPE", token, nil)
+	missingFund := call(t, srv, http.MethodGet, "/api/v1/fund/NOPE", token, nil)
+	for _, rec := range []*httptest.ResponseRecorder{missing, missingFund} {
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+		}
+		if rec.Header().Get("content-type") != "application/problem+json" {
+			t.Fatalf("content-type %s", rec.Header().Get("content-type"))
+		}
+		var problem map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+			t.Fatal(err)
+		}
+		if problem["type"] != "about:blank" || problem["status"] != float64(http.StatusNotFound) || problem["title"] == "" || problem["detail"] == "" {
+			t.Fatalf("problem %#v", problem)
+		}
 	}
 }
 
