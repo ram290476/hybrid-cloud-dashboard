@@ -139,6 +139,35 @@ func TestDataHealthQueriesTheNamedBackend(t *testing.T) {
 	}
 }
 
+func TestOpsLogsFiltersTheRecordedRequest(t *testing.T) {
+	a := backend("go", "blue", false)
+	defer a.Close()
+	doc := testDoc(a.URL)
+	srv := New(doc, "c0ffee")
+	now := time.Date(2026, 11, 18, 20, 0, 0, 0, time.UTC)
+	srv.Now = func() time.Time { return now }
+	srv.ProbeOnce()
+	srv.ProbeOnce()
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/stock/TSLA", nil))
+	if rec.Code != 200 {
+		t.Fatalf("proxy %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ops/logs?backend=go-gcp&q=TSLA&from=15m", nil))
+	if rec.Code != 200 {
+		t.Fatalf("logs %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "/api/v1/stock/TSLA") || !strings.Contains(rec.Body.String(), `"backend": "gcp-go"`) {
+		t.Fatalf("body %s", rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ops/logs?backend=nope", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad backend %d", rec.Code)
+	}
+}
+
 func TestProxyRoutesAndAudits(t *testing.T) {
 	a := backend("go", "blue", false)
 	b := backend("python", "green", false)

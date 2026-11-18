@@ -9,6 +9,54 @@ info:
 servers:
   - url: http://localhost/api/v1
 paths:
+  /ops/logs:
+    get:
+      operationId: getOpsLogs
+      summary: Facade log query. Not implemented by the three backends.
+      description: |
+        The facade reads Loki when LOKI_URL is set and otherwise the lines it
+        recorded itself. backend accepts gcp-go, aws-python, azure-dotnet, and
+        facade, and also the directory names go-gcp, python-aws, and
+        dotnet-azure. from is 15m, 1h, 24h, 7d, or an ISO time. Repeat backend
+        to select more than one. cursor is the next_cursor from the previous page.
+      parameters:
+        - name: backend
+          in: query
+          schema: { type: string }
+          style: form
+          explode: true
+        - name: from
+          in: query
+          schema: { type: string }
+        - name: to
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: level
+          in: query
+          schema: { type: string, enum: [debug, info, warn, error] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      security: []
+      responses:
+        "200":
+          description: Newest matching lines first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsLogs"
+        "400":
+          description: A filter is not valid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /healthz:
     get:
       operationId: healthz
@@ -353,6 +401,28 @@ components:
         origin: { type: string, examples: [contract-fixtures, investor-dashboard] }
         at: { type: string, format: date-time }
         age_seconds: { type: ["integer", "null"] }
+    OpsLogs:
+      type: object
+      required: [source, entries, next_cursor]
+      properties:
+        source: { type: string, enum: [loki, memory] }
+        warning: { type: string }
+        next_cursor: { type: string }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [timestamp, level, backend, cloud, color, route, status, trace_id, message]
+            properties:
+              timestamp: { type: string }
+              level: { type: string }
+              backend: { type: string }
+              cloud: { type: string }
+              color: { type: string }
+              route: { type: string }
+              status: { type: integer }
+              trace_id: { type: string }
+              message: { type: string }
     Problem:
       type: object
       properties:

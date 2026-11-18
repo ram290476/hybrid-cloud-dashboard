@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/ram290476/hybrid-cloud-dashboard/facade/logs"
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/policy"
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/proxy"
 )
@@ -23,6 +24,11 @@ func main() {
 	server.Audience = env("DEV_JWT_AUDIENCE", "hcd-local")
 	server.DevInject = os.Getenv("DEV_INJECT_TOKEN") == "1"
 	server.Frontend = os.Getenv("FRONTEND_DIR")
+	if loki := os.Getenv("LOKI_URL"); loki != "" {
+		if mem, ok := server.Logs.(*logs.Memory); ok {
+			server.Logs = &logs.Loki{URL: loki, Client: server.Client, Fallback: mem}
+		}
+	}
 	server.Salt = env("AUDIT_IP_SALT", "hcd-local-salt")
 	if v := os.Getenv("AUDIT_IP_SALT"); v != "" {
 		server.Salt = v

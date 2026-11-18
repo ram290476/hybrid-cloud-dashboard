@@ -12,7 +12,8 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from dashboard_api.auth import parse
-from dashboard_api.data_health import build_data_health
+from dashboard_api.data_health import build_data_health, cloud_of
+from dashboard_api.request_log import emit
 from dashboard_api.merge import empty_doc, project
 from dashboard_api.store import Memory, S3Dynamo
 
@@ -61,6 +62,30 @@ def _seed() -> None:
 _seed()
 
 app = FastAPI(title="dashboard-api", version="v1")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        trace = request.headers.get("traceparent", "")
+        trace_id = trace.split("-")[1] if trace.count("-") >= 2 else request.headers.get("x-request-id", "")
+        level = "info"
+        if response.status_code >= 500:
+            level = "error"
+        elif response.status_code >= 400:
+            level = "warn"
+        emit(
+            level=level,
+            backend=APP_BACKEND,
+            cloud=cloud_of(APP_BACKEND),
+            color=APP_COLOR,
+            route=request.url.path,
+            status=response.status_code,
+            trace_id=trace_id,
+            message=f"{request.method} {request.url.path} {response.status_code}",
+        )
+    return response
 
 
 def _headers() -> dict[str, str]:

@@ -45,6 +45,16 @@ app.Use(async (ctx, next) =>
     Head();
     if (HttpMethods.IsOptions(ctx.Request.Method)) { ctx.Response.StatusCode = 204; return; }
     await next();
+    if (ctx.Request.Path.StartsWithSegments("/api"))
+    {
+        var status = ctx.Response.StatusCode;
+        var level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
+        var trace = ctx.Request.Headers.TraceParent.ToString();
+        var parts = trace.Split('-');
+        var traceId = parts.Length >= 2 && parts[1].Length > 0 ? parts[1] : ctx.Request.Headers["x-request-id"].ToString();
+        var cloud = backend.StartsWith("gcp") ? "gcp" : backend.StartsWith("aws") ? "aws" : backend.StartsWith("azure") ? "azure" : "unknown";
+        RequestLog.Emit(level, backend, cloud, color, ctx.Request.Path.Value ?? "", status, traceId, $"{ctx.Request.Method} {ctx.Request.Path} {status}");
+    }
     if (!ctx.Response.HasStarted) Head();
 });
 
