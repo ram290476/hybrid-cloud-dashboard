@@ -56,6 +56,11 @@
       tr.log-azure td:nth-child(2) { color: var(--amber); }
       tr.log-facade td:nth-child(2) { color: var(--text); }
       .logs pre { white-space: pre-wrap; }
+      #alert-count { margin-left: 6px; color: var(--amber); }
+      tr.resolved { opacity: 0.55; }
+      .badge.severity-critical { color: var(--red); }
+      .badge.severity-warning { color: var(--amber); }
+      .badge.severity-info { color: var(--blue); }
       @media (max-width: 800px) {
         .ops-grid { grid-template-columns: 1fr; }
         .ops-head { flex-direction: column; align-items: flex-start; }
@@ -77,6 +82,7 @@
         <button type="button" role="tab" id="tab-ops" data-tab="ops" aria-selected="true" aria-controls="panel-ops">Operations</button>
         <button type="button" role="tab" id="tab-health" data-tab="health" aria-selected="false" aria-controls="panel-health">Data health</button>
         <button type="button" role="tab" id="tab-logs" data-tab="logs" aria-selected="false" aria-controls="panel-logs">Logs</button>
+        <button type="button" role="tab" id="tab-alerts" data-tab="alerts" aria-selected="false" aria-controls="panel-alerts">Alerts <span id="alert-count" hidden></span></button>
       </nav>
       <div id="panel-ops" role="tabpanel" aria-labelledby="tab-ops">
         <section id="cards" class="ops-grid" aria-live="polite"></section>
@@ -94,6 +100,9 @@
       </div>
       <div id="panel-logs" role="tabpanel" aria-labelledby="tab-logs" hidden>
         <div id="logs"></div>
+      </div>
+      <div id="panel-alerts" role="tabpanel" aria-labelledby="tab-alerts" hidden>
+        <div id="alerts"></div>
       </div>
     </main>
   </body>

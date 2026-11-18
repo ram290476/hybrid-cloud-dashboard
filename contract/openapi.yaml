@@ -92,6 +92,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Identity"
+  /api/v1/alerts:
+    get:
+      operationId: getAlerts
+      summary: Current and recently resolved alerts for this backend.
+      description: |
+        Each backend reports alerts from its own store: stale or missing serving
+        data, and collectors whose status is not ok or whose last run is older
+        than its interval. The facade serves the same path and adds health,
+        disagreement, and audit alerts from all three backends. A missing or
+        stale condition is a warning inside this list, not an HTTP error.
+        from accepts 15m, 1h, 24h, 7d, or an ISO time and is matched against
+        first_seen and last_seen. q searches id, source, and message.
+      parameters:
+        - name: backend
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string }
+        - name: to
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [critical, warning, info] }
+        - name: state
+          in: query
+          schema: { type: string, enum: [firing, resolved] }
+      responses:
+        "200":
+          description: Alerts, firing ones first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AlertsPage"
   /api/v1/data-health:
     get:
       operationId: getDataHealth
@@ -401,6 +439,25 @@ components:
         origin: { type: string, examples: [contract-fixtures, investor-dashboard] }
         at: { type: string, format: date-time }
         age_seconds: { type: ["integer", "null"] }
+    AlertsPage:
+      type: object
+      required: [alerts, firing]
+      properties:
+        firing: { type: integer, minimum: 0 }
+        alerts:
+          type: array
+          items:
+            type: object
+            required: [id, severity, source, backend, message, first_seen, last_seen, state]
+            properties:
+              id: { type: string }
+              severity: { type: string, enum: [critical, warning, info] }
+              source: { type: string }
+              backend: { type: string }
+              message: { type: string }
+              first_seen: { type: string }
+              last_seen: { type: string }
+              state: { type: string, enum: [firing, resolved] }
     OpsLogs:
       type: object
       required: [source, entries, next_cursor]
