@@ -2,6 +2,23 @@
 
 Shared market UI is copied from `ram290476/investor-dashboard` `main`. The next sync starts after the latest entry.
 
+## 2026-11-18 — `1e6d5c0`
+
+Reviewed `28afeecd94e2a789010930da5b1d84a185d2f447..1e6d5c045006c89bd66f2c21624ded9df597ef6c` (one commit). The previous sync stopped at `28afeec` (#75).
+
+**Upstream:** `1e6d5c045006c89bd66f2c21624ded9df597ef6c` — "Collect every catalog ticker and add the November Deep Dive cards. (#336)".
+
+**Ported:** four `SECTION_SHORT_LABELS` entries in `frontend/deep-dive.js` (`gross profit` → `GP`, `net income` → `Net income`, `gross profit and net income` → `GP & net income`, `gross profit, operating income, and net income` → `GP, op. income, NI`). `frontend/deep-dive.test.js` asserts those chip labels and adds "net income card shows a narrower loss and hides when empty". The renderer already draws headline cards, QoQ and YoY, pattern labels, pending review, and `hide_when_empty`, so no other shared module changed.
+
+**Skipped:**
+
+- `services/data-jobs/**`: company IR catalogs (`AAPL` gross profit; `AMZN`, `EVGO`, `GOOG`, and `QS` net income; `MRVL` and `PLTR` gross profit and net income; `NVDA` gross profit, operating income, and net income; `QS` operating-income narrower-loss note), `company_ir.py` (`eps_diluted` stays a reported quarter and collect leads with every packaged catalog ticker, then the watchlist, capped), `deep_dive.py` (a negative latest value rewrites a growth flag as a narrower loss; collect uses the catalog set unless the event names tickers), and `tests/test_company_metrics_collector.py` plus `tests/test_deep_dive.py`. This repo has no company-IR catalog, collector, or deep-dive assembler. The three backends serve dashboard, status, chart, and prefs fixtures. They do not emit these November sections.
+- `docs/deep-dive.md`: the sentence only describes the investor-dashboard data-jobs collect set (catalog tickers first, then the watchlist, capped at 25). This repo has no `deep-dive-collect` job and no `docs/deep-dive.md`.
+
+**Hybrid behavior kept:** `frontend/hybrid.html`, local `config.json` dev auth (`authMode: dev`, `DEV_INJECT_TOKEN`), the facade, and `hcd-sync` are unchanged.
+
+Issue #76.
+
 ## 2026-11-14 — `28afeec`
 
 Reviewed `f9805e45c75ad7b09f438ff77cc38e7fbeb12e67..28afeecd94e2a789010930da5b1d84a185d2f447` (three commits). The previous sync stopped at `f9805e4` (#73).
