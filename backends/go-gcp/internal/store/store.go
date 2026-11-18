@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
+	"time"
 )
 
 // ErrNotFound is a missing object or prefs document. Callers may seed defaults
@@ -23,19 +25,31 @@ type Store interface {
 	Ready(ctx context.Context) error
 	GetObject(ctx context.Context, key string) ([]byte, error)
 	PutObject(ctx context.Context, key string, body []byte) error
+	ListObjects(ctx context.Context, prefix string) ([]ObjectInfo, error)
 	GetPrefs(ctx context.Context, sub string) ([]byte, error)
 	PutPrefs(ctx context.Context, sub string, body []byte) error
+}
+
+// ObjectInfo is one stored object. Modified is zero when the backend has no timestamp.
+type ObjectInfo struct {
+	Key      string
+	Modified time.Time
+}
+
+type memValue struct {
+	body     []byte
+	modified time.Time
 }
 
 // Memory is the default store for tests and for a backend whose emulator is down.
 type Memory struct {
 	mu    sync.Mutex
-	objs  map[string][]byte
+	objs  map[string]memValue
 	prefs map[string][]byte
 }
 
 func NewMemory() *Memory {
-	return &Memory{objs: map[string][]byte{}, prefs: map[string][]byte{}}
+	return &Memory{objs: map[string]memValue{}, prefs: map[string][]byte{}}
 }
 
 func (m *Memory) Ready(context.Context) error { return nil }
@@ -43,18 +57,31 @@ func (m *Memory) Ready(context.Context) error { return nil }
 func (m *Memory) GetObject(_ context.Context, key string) ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	body, ok := m.objs[key]
+	item, ok := m.objs[key]
 	if !ok {
 		return nil, fmt.Errorf("missing object %s: %w", key, ErrNotFound)
 	}
-	return append([]byte(nil), body...), nil
+	return append([]byte(nil), item.body...), nil
 }
 
 func (m *Memory) PutObject(_ context.Context, key string, body []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.objs[key] = append([]byte(nil), body...)
+	m.objs[key] = memValue{body: append([]byte(nil), body...), modified: time.Now().UTC()}
 	return nil
+}
+
+func (m *Memory) ListObjects(_ context.Context, prefix string) ([]ObjectInfo, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]ObjectInfo, 0)
+	for key, item := range m.objs {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		out = append(out, ObjectInfo{Key: key, Modified: item.modified})
+	}
+	return out, nil
 }
 
 func (m *Memory) GetPrefs(_ context.Context, sub string) ([]byte, error) {
@@ -142,6 +169,56 @@ func (g GCS) GetObject(ctx context.Context, key string) ([]byte, error) {
 	return body, nil
 }
 
+func (g GCS) ListObjects(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	var out []ObjectInfo
+	token := ""
+	for {
+		query := url.Values{}
+		query.Set("prefix", prefix)
+		if token != "" {
+			query.Set("pageToken", token)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, g.url("/storage/v1/b/"+url.PathEscape(g.Bucket)+"/o?"+query.Encode()), nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := g.client().Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("gcs list %d", resp.StatusCode)
+		}
+		var page struct {
+			Items []struct {
+				Name    string `json:"name"`
+				Updated string `json:"updated"`
+			} `json:"items"`
+			NextPageToken string `json:"nextPageToken"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, err
+		}
+		for _, item := range page.Items {
+			info := ObjectInfo{Key: item.Name}
+			if item.Updated != "" {
+				if ts, err := time.Parse(time.RFC3339Nano, item.Updated); err == nil {
+					info.Modified = ts
+				} else if ts, err := time.Parse(time.RFC3339, item.Updated); err == nil {
+					info.Modified = ts
+				}
+			}
+			out = append(out, info)
+		}
+		if page.NextPageToken == "" {
+			return out, nil
+		}
+		token = page.NextPageToken
+	}
+}
+
 func (g GCS) PutObject(ctx context.Context, key string, body []byte) error {
 	endpoint := g.url("/upload/storage/v1/b/" + url.PathEscape(g.Bucket) + "/o?uploadType=media&name=" + url.QueryEscape(key))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
@@ -205,6 +282,9 @@ func (p Pair) GetObject(ctx context.Context, key string) ([]byte, error) {
 }
 func (p Pair) PutObject(ctx context.Context, key string, body []byte) error {
 	return p.Objects.PutObject(ctx, key, body)
+}
+func (p Pair) ListObjects(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	return p.Objects.ListObjects(ctx, prefix)
 }
 func (p Pair) GetPrefs(ctx context.Context, sub string) ([]byte, error) {
 	return p.Prefs.GetPrefs(ctx, sub)

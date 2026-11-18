@@ -71,6 +71,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, start time.Time) {
 		return
 	}
 	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/data-health":
+		s.dataHealth(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/status":
 		s.object(w, r, "serving/status.json")
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/dashboard":

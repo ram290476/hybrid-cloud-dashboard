@@ -17,6 +17,30 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "contract" / "fixtures"
 
 
+def import_marker(source: str, origin: str) -> tuple[str, bytes]:
+    """Small serving/_import.json marker. Source and time only; no bucket name."""
+    body = json.dumps(
+        {
+            "source": source,
+            "origin": origin,
+            "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        },
+        separators=(",", ":"),
+    ).encode()
+    return "serving/_import.json", body
+
+
+def seed_objects() -> list[tuple[str, bytes]]:
+    objects = []
+    for path in FIXTURES.rglob("*.json"):
+        key = str(path.relative_to(FIXTURES)).replace("\\", "/")
+        if key == "serving/_import.json":
+            continue
+        objects.append((key, path.read_bytes()))
+    objects.append(import_marker("local-seed", "contract-fixtures"))
+    return objects
+
+
 def gcs_bucket(host: str, name: str) -> None:
     body = json.dumps({"name": name}).encode()
     req = urllib.request.Request(host.rstrip("/") + "/storage/v1/b?project=hcd-local", data=body, method="POST")
@@ -26,11 +50,10 @@ def gcs_bucket(host: str, name: str) -> None:
     except Exception as exc:
         if "409" not in str(exc):
             raise
-    for path in FIXTURES.rglob("*.json"):
-        key = str(path.relative_to(FIXTURES)).replace("\\", "/")
+    for key, body in seed_objects():
         upload = urllib.request.Request(
             host.rstrip("/") + f"/upload/storage/v1/b/{name}/o?uploadType=media&name={key}",
-            data=path.read_bytes(),
+            data=body,
             method="POST",
         )
         upload.add_header("content-type", "application/json")
@@ -84,10 +107,9 @@ def _azure(method: str, endpoint: str, account: str, key_b64: str, body: bytes, 
 def azurite_seed(endpoint: str, container: str) -> None:
     base = endpoint.rstrip("/") + "/" + AZURITE_ACCOUNT + "/" + container
     _azure("PUT", base + "?restype=container", AZURITE_ACCOUNT, AZURITE_KEY, b"", False, [("restype", "container")])
-    for path in FIXTURES.rglob("*.json"):
-        key = str(path.relative_to(FIXTURES)).replace("\\", "/")
+    for key, body in seed_objects():
         quoted = urllib.parse.quote(key)
-        _azure("PUT", base + "/" + quoted, AZURITE_ACCOUNT, AZURITE_KEY, path.read_bytes(), True, [])
+        _azure("PUT", base + "/" + quoted, AZURITE_ACCOUNT, AZURITE_KEY, body, True, [])
 
 
 def main() -> None:
@@ -110,9 +132,8 @@ def main() -> None:
             s3.create_bucket(Bucket=bucket)
         except Exception:
             pass
-        for path in FIXTURES.rglob("*.json"):
-            key = str(path.relative_to(FIXTURES)).replace("\\", "/")
-            s3.put_object(Bucket=bucket, Key=key, Body=path.read_bytes())
+        for key, body in seed_objects():
+            s3.put_object(Bucket=bucket, Key=key, Body=body)
         dynamo = boto3.client("dynamodb", endpoint_url=os.environ.get("DYNAMODB_ENDPOINT", "http://127.0.0.1:8000"))
         try:
             dynamo.create_table(

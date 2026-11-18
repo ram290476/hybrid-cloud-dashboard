@@ -1,3 +1,5 @@
+import { loadReports, renderDataHealth } from "./data-health.js";
+import { OPS_TABS, searchWithTab, tabFromSearch } from "./ops-tabs.js";
 import { applyTheme } from "./theme.js";
 
 applyTheme({ theme: "industrial-dark", updown_palette: "green-red" });
@@ -5,6 +7,7 @@ applyTheme({ theme: "industrial-dark", updown_palette: "green-red" });
 const cards = document.querySelector("#cards");
 const routes = document.querySelector("#routes");
 const audit = document.querySelector("#audit");
+const health = document.querySelector("#health");
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
@@ -37,13 +40,40 @@ function render(state) {
   }</tbody></table>` : `<p class="muted">No requests yet. Open the market dashboard or call /api/v1/status.</p>`;
 }
 
+function showTab(tab) {
+  const selected = OPS_TABS.includes(tab) ? tab : "ops";
+  for (const name of OPS_TABS) {
+    const panel = document.querySelector(`#panel-${name}`);
+    const button = document.querySelector(`[data-tab="${name}"]`);
+    if (panel) panel.hidden = name !== selected;
+    if (button) button.setAttribute("aria-selected", name === selected ? "true" : "false");
+  }
+}
+
+document.querySelectorAll("[data-tab]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const tab = button.getAttribute("data-tab");
+    const next = searchWithTab(location.search, tab);
+    history.replaceState(null, "", `${location.pathname}${next}`);
+    showTab(tab);
+  });
+});
+showTab(tabFromSearch(location.search));
+
 async function tick() {
   try {
     const response = await fetch("/api/v1/facade/state");
     if (!response.ok) throw new Error(String(response.status));
-    render(await response.json());
+    const state = await response.json();
+    render(state);
+    try {
+      health.innerHTML = renderDataHealth(await loadReports(state.backends || []));
+    } catch (error) {
+      health.innerHTML = `<p class="muted">Data health is not reachable (${esc(error.message)}).</p>`;
+    }
   } catch (error) {
     cards.innerHTML = `<p class="muted">Facade state is not reachable (${esc(error.message)}). Start it with <span class="metric">make demo</span>.</p>`;
+    health.innerHTML = `<p class="muted">Data health needs the facade (${esc(error.message)}).</p>`;
   }
 }
 

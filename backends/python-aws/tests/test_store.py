@@ -34,6 +34,11 @@ class FakeS3:
     def put_object(self, Bucket: str, Key: str, Body: bytes) -> None:
         self.objects[Key] = Body
 
+    def list_objects_v2(self, **kwargs):
+        if getattr(self, "list_pages", None):
+            return self.list_pages.pop(0)
+        return {"Contents": [{"Key": key} for key in self.objects if key.startswith(kwargs.get("Prefix", ""))], "IsTruncated": False}
+
 
 class FakeMissing(Exception):
     def __init__(self, code: str = "NoSuchKey") -> None:
@@ -75,6 +80,24 @@ def _doc(sub: str, theme: str, wall: int, ticker: str | None = None) -> dict:
     if ticker:
         doc["tickers"]["adds"][ticker] = {"value": ticker, "hlc": {"wall_ms": wall, "counter": 0, "origin": "test"}}
     return doc
+
+
+def test_s3_list_objects_uses_the_bucket():
+    from datetime import datetime, timezone
+
+    memory = Memory()
+    store = S3Dynamo(memory)
+    store.s3 = FakeS3()
+    store.s3.objects["serving/chart/TSLA.json"] = b"{}"
+    store.s3.list_pages = [
+        {
+            "Contents": [{"Key": "serving/chart/TSLA.json", "LastModified": datetime(2026, 10, 9, tzinfo=timezone.utc)}],
+            "IsTruncated": False,
+        }
+    ]
+    rows = store.list_objects("serving/")
+    assert rows[0]["key"] == "serving/chart/TSLA.json"
+    assert rows[0]["modified"].year == 2026
 
 
 def test_object_store_wins_over_stale_dynamo():

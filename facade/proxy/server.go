@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -304,12 +305,93 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"version": "dev", "policy": s.Doc.Metadata.Version})
 	case r.URL.Path == "/api/v1/facade/state":
 		writeJSON(w, http.StatusOK, s.State())
+	case strings.HasPrefix(r.URL.Path, "/api/v1/facade/data-health/"):
+		s.serveDataHealth(w, r)
 	case r.URL.Path == "/api/v1/facade/rollout" && r.Method == http.MethodPost:
 		s.handleRollout(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		s.proxy(w, r)
 	default:
 		s.static(w, r)
+	}
+}
+
+// serveDataHealth calls one named backend. It does not use routing weights and
+// does not write an audit line, so the Operations poll cannot move traffic.
+func (s *Server) serveDataHealth(w http.ResponseWriter, r *http.Request) {
+	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/facade/data-health/"), "/")
+	backend := findBackend(s.Doc, name)
+	if name == "" || strings.Contains(name, "/") || backend.Name == "" {
+		writeProblem(w, http.StatusNotFound, "unknown backend")
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, join(backend.Endpoint, "/api/v1/data-health"), nil)
+	if err != nil {
+		writeJSON(w, http.StatusOK, unavailableDataHealth(backend, "backend unreachable"))
+		return
+	}
+	if header := r.Header.Get("Authorization"); header != "" {
+		req.Header.Set("Authorization", header)
+	}
+	s.authorize(req)
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusOK, unavailableDataHealth(backend, "backend unreachable"))
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK || !json.Valid(body) {
+		writeJSON(w, http.StatusOK, unavailableDataHealth(backend, fmt.Sprintf("backend status %d", resp.StatusCode)))
+		return
+	}
+	w.Header().Set("content-type", "application/json")
+	if lang := resp.Header.Get("x-backend-lang"); lang != "" {
+		w.Header().Set("x-backend-lang", lang)
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
+func (s *Server) authorize(req *http.Request) {
+	if s.FacadeKey != "" {
+		req.Header.Set("x-facade-key", s.FacadeKey)
+	}
+	if req.Header.Get("Authorization") == "" && s.DevInject && s.DevSecret != "" {
+		token, err := devjwt.Mint(s.DevSecret, devjwt.Claims{
+			Sub: "local-user", Iss: s.Issuer, Aud: s.Audience, Iat: s.Now().Unix(), Exp: s.Now().Add(time.Hour).Unix(),
+		})
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+}
+
+func unavailableDataHealth(backend policy.Backend, warning string) map[string]any {
+	dash := map[string]any{"key": "serving/dashboard.json", "present": false, "generated_at": nil, "last_modified": nil, "age_seconds": nil}
+	status := map[string]any{"key": "serving/status.json", "present": false, "generated_at": nil, "last_modified": nil, "age_seconds": nil}
+	return map[string]any{
+		"backend": backend.Name, "lang": backend.Labels["lang"], "runtime": backend.Labels["runtime"],
+		"color": "", "version": "", "data_version": "", "cloud": cloudOf(backend.Name),
+		"checked_at": time.Now().UTC().Format(time.RFC3339), "freshness": "missing",
+		"fresh_within_seconds": int64(36 * 60 * 60),
+		"counts":               map[string]int{"chart": 0, "stock": 0, "funds": 0},
+		"files":                map[string]any{"dashboard": dash, "status": status},
+		"tickers":              []string{}, "newest_at": nil, "oldest_at": nil,
+		"collectors": []any{}, "import": nil, "warnings": []string{warning},
+	}
+}
+
+func cloudOf(name string) string {
+	switch {
+	case strings.HasPrefix(name, "gcp"):
+		return "gcp"
+	case strings.HasPrefix(name, "aws"):
+		return "aws"
+	case strings.HasPrefix(name, "azure"):
+		return "azure"
+	default:
+		return "unknown"
 	}
 }
 
@@ -503,17 +585,7 @@ func (s *Server) forward(r *http.Request, name string, body []byte, requestID st
 	req.Header.Set("x-route-policy", route.Policy)
 	req.Header.Set("x-route-reason", reason)
 	req.Header.Set("x-route-config", s.ConfigHash)
-	if s.FacadeKey != "" {
-		req.Header.Set("x-facade-key", s.FacadeKey)
-	}
-	if s.DevInject && req.Header.Get("Authorization") == "" && s.DevSecret != "" {
-		token, err := devjwt.Mint(s.DevSecret, devjwt.Claims{
-			Sub: "local-user", Iss: s.Issuer, Aud: s.Audience, Iat: s.Now().Unix(), Exp: s.Now().Add(time.Hour).Unix(),
-		})
-		if err == nil {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-	}
+	s.authorize(req)
 	resp, err := s.Client.Do(req)
 	if err != nil {
 		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {

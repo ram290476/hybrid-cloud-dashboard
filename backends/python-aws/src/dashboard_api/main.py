@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from dashboard_api.auth import parse
+from dashboard_api.data_health import build_data_health
 from dashboard_api.merge import empty_doc, project
 from dashboard_api.store import Memory, S3Dynamo
 
@@ -149,6 +151,15 @@ def readyz() -> JSONResponse:
 @app.get("/version")
 def version() -> JSONResponse:
     return JSONResponse(_identity(), headers=_headers())
+
+
+@app.get("/api/v1/data-health")
+def data_health(request: Request) -> Response:
+    guard = _guard(request)
+    if isinstance(guard, JSONResponse):
+        return guard
+    report = build_data_health(store, _identity(), datetime.now(timezone.utc))
+    return JSONResponse(report, headers=_headers())
 
 
 @app.get("/api/v1/status")

@@ -112,3 +112,17 @@ def test_path_style_string_to_sign_prefixes_the_account_twice():
     assert headers["Authorization"] == f"SharedKey {seed.AZURITE_ACCOUNT}:{sig}"
     assert headers["Content-Type"] == "application/octet-stream"
     assert "Content-Length" not in headers
+
+
+def test_seed_objects_record_when_and_where_without_a_bucket():
+    import json
+    import re
+
+    objects = dict(seed.seed_objects())
+    assert "serving/status.json" in objects
+    doc = json.loads(objects["serving/_import.json"])
+    assert doc["source"] == "local-seed"
+    assert doc["origin"] == "contract-fixtures"
+    assert doc["at"].endswith("Z")
+    assert "bucket" not in doc
+    assert re.search(r"\d{12}", json.dumps(doc)) is None

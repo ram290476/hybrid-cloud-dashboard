@@ -23,6 +23,21 @@
       th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
       th { color: var(--muted); font-weight: 500; }
       a { color: var(--blue); }
+      .ops-tabs { display: flex; gap: 8px; margin: 0 0 18px; }
+      .ops-tabs button { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+      .ops-tabs button[aria-selected="true"] { color: var(--text); border-color: var(--blue); }
+      .badge { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+      .badge.fresh { color: var(--green); }
+      .badge.stale { color: var(--amber); }
+      .badge.missing { color: var(--red); }
+      .health-alert { color: var(--amber); margin: 0 0 12px; }
+      .health-row { display: flex; justify-content: space-between; gap: 12px; margin: 4px 0; }
+      .health-row span:last-child { text-align: right; }
+      .disagree { background: color-mix(in srgb, var(--amber) 22%, transparent); border-radius: 4px; }
+      .job.ok { color: var(--green); }
+      .job.bad { color: var(--red); }
+      .job.warn { color: var(--amber); }
+      .collectors, .warnings { margin: 8px 0 0; padding-left: 18px; }
       @media (max-width: 800px) {
         .ops-grid { grid-template-columns: 1fr; }
         .ops-head { flex-direction: column; align-items: flex-start; }
@@ -40,15 +55,24 @@
         </div>
         <p><a href="/">Market dashboard</a></p>
       </header>
-      <section id="cards" class="ops-grid" aria-live="polite"></section>
-      <section class="panel" style="margin-top: 16px">
-        <header class="panel-header"><h2>Routing</h2></header>
-        <div class="panel-body" id="routes"></div>
-      </section>
-      <section class="panel" style="margin-top: 16px">
-        <header class="panel-header"><h2>Audit log</h2></header>
-        <div class="panel-body" id="audit"></div>
-      </section>
+      <nav class="ops-tabs" role="tablist" aria-label="Operations">
+        <button type="button" role="tab" id="tab-ops" data-tab="ops" aria-selected="true" aria-controls="panel-ops">Operations</button>
+        <button type="button" role="tab" id="tab-health" data-tab="health" aria-selected="false" aria-controls="panel-health">Data health</button>
+      </nav>
+      <div id="panel-ops" role="tabpanel" aria-labelledby="tab-ops">
+        <section id="cards" class="ops-grid" aria-live="polite"></section>
+        <section class="panel" style="margin-top: 16px">
+          <header class="panel-header"><h2>Routing</h2></header>
+          <div class="panel-body" id="routes"></div>
+        </section>
+        <section class="panel" style="margin-top: 16px">
+          <header class="panel-header"><h2>Audit log</h2></header>
+          <div class="panel-body" id="audit"></div>
+        </section>
+      </div>
+      <div id="panel-health" role="tabpanel" aria-labelledby="tab-health" hidden>
+        <div id="health" aria-live="polite"></div>
+      </div>
     </main>
   </body>
 </html>

@@ -44,6 +44,105 @@ func newServer(t *testing.T) (*Server, string) {
 	}, token
 }
 
+func tokenAt(t *testing.T, srv *Server, now time.Time) string {
+	t.Helper()
+	srv.Now = func() time.Time { return now }
+	token, err := devjwt.Mint(srv.DevSecret, devjwt.Claims{
+		Sub: "user-1", Iss: srv.Issuer, Aud: srv.Audience, Iat: now.Unix(), Exp: now.Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return token
+}
+
+func TestDataHealthFreshStaleAndMissing(t *testing.T) {
+	srv, _ := newServer(t)
+	token := tokenAt(t, srv, time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC))
+	rec := call(t, srv, http.MethodGet, "/api/v1/data-health", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var fresh map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &fresh); err != nil {
+		t.Fatal(err)
+	}
+	if fresh["freshness"] != "fresh" || fresh["cloud"] != "gcp" || fresh["backend"] != "gcp-go" {
+		t.Fatalf("fresh report %#v", fresh)
+	}
+	if fresh["fresh_within_seconds"] != float64(FreshWithinSeconds) {
+		t.Fatalf("threshold %#v", fresh["fresh_within_seconds"])
+	}
+	counts := fresh["counts"].(map[string]any)
+	if counts["chart"] != float64(1) || counts["stock"] != float64(1) || counts["funds"] != float64(1) {
+		t.Fatalf("counts %#v", counts)
+	}
+	tickers := fresh["tickers"].([]any)
+	if len(tickers) != 2 || tickers[0] != "ARKK" || tickers[1] != "TSLA" {
+		t.Fatalf("tickers %#v", tickers)
+	}
+	files := fresh["files"].(map[string]any)
+	dash := files["dashboard"].(map[string]any)
+	if dash["generated_at"] != "2026-10-09T22:00:00Z" || dash["age_seconds"] != float64(43200) || dash["present"] != true {
+		t.Fatalf("dashboard %#v", dash)
+	}
+	jobs := fresh["collectors"].([]any)
+	if len(jobs) != 1 || jobs[0].(map[string]any)["name"] != "prices_daily" {
+		t.Fatalf("collectors %#v", jobs)
+	}
+	if fresh["import"] != nil {
+		t.Fatalf("import %#v", fresh["import"])
+	}
+	if fresh["newest_at"] == nil || fresh["oldest_at"] == nil {
+		t.Fatal("file timestamps missing")
+	}
+
+	marker := []byte(`{"source":"local-seed","origin":"contract-fixtures","at":"2026-10-10T09:00:00Z"}`)
+	if err := srv.Store.PutObject(context.Background(), "serving/_import.json", marker); err != nil {
+		t.Fatal(err)
+	}
+	rec = call(t, srv, http.MethodGet, "/api/v1/data-health", token, nil)
+	_ = json.Unmarshal(rec.Body.Bytes(), &fresh)
+	imported := fresh["import"].(map[string]any)
+	if imported["source"] != "local-seed" || imported["origin"] != "contract-fixtures" || imported["age_seconds"] != float64(3600) {
+		t.Fatalf("import %#v", imported)
+	}
+
+	token = tokenAt(t, srv, time.Date(2026, 11, 18, 20, 0, 0, 0, time.UTC))
+	rec = call(t, srv, http.MethodGet, "/api/v1/data-health", token, nil)
+	_ = json.Unmarshal(rec.Body.Bytes(), &fresh)
+	if fresh["freshness"] != "stale" {
+		t.Fatalf("want stale, got %#v", fresh["freshness"])
+	}
+	warnings := fresh["warnings"].([]any)
+	joined := fmtWarnings(warnings)
+	if !strings.Contains(joined, "stale") {
+		t.Fatalf("warnings %#v", warnings)
+	}
+
+	empty := store.NewMemory()
+	srv.Store = empty
+	rec = call(t, srv, http.MethodGet, "/api/v1/data-health", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("missing data status %d", rec.Code)
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &fresh)
+	if fresh["freshness"] != "missing" {
+		t.Fatalf("want missing, got %#v body %s", fresh["freshness"], rec.Body.String())
+	}
+	if !strings.Contains(fmtWarnings(fresh["warnings"].([]any)), "serving/dashboard.json is missing") {
+		t.Fatalf("warnings %#v", fresh["warnings"])
+	}
+}
+
+func fmtWarnings(items []any) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		parts = append(parts, item.(string))
+	}
+	return strings.Join(parts, "\n")
+}
+
 func TestDashboardMatchesFixture(t *testing.T) {
 	srv, token := newServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
