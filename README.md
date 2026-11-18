@@ -28,6 +28,7 @@ deploy/                   kind config, Kustomize for kind and the local facade
 infra/terraform/          Terraform HCL for gcp, aws, azure, and a gated cloudflare sketch
 docs/runbooks/public-dns.md   GoDaddy CNAME for hybridcloud.vellamsetti.com
 docs/local-ports.md           Host, cluster, and dependency ports for local kind + Tilt
+docs/dash-import.md           make dash-import: copy investor-dashboard serving data into the local stores
 ```
 
 Section 11 of the architecture copies `apps/web` as zero-build ES modules. The market screens stay that app, synced from investor-dashboard `f6c4c1e` (theme tokens, styles, layout modules, and `safe-storage.js`). `frontend/hybrid.html` is the hybrid operations page and uses the same Industrial Dark tokens (`theme.js`, IBM Plex, `styles.css`).
@@ -75,6 +76,8 @@ make dash-import
 ```
 
 `make dash-import` copies `serving/dashboard.json`, `serving/status.json`, `serving/chart_data/*.json` (stored locally as `serving/chart/*.json`), `serving/stock/*.json`, and `serving/funds/*.json` into `hcd-serving` on SeaweedFS (`127.0.0.1:9000`), fake-gcs (`127.0.0.1:4443`), and Azurite (`127.0.0.1:10000`). It skips `*.gz`, parquet, `_lease`, and `_debounce` objects. `S3_ENDPOINT`, `GCS_EMULATOR_HOST`, and `AZURE_BLOB_ENDPOINT` override those local addresses the same way `make local-seed` does.
+
+A full write-up, including prerequisites, the `chart_data` → `chart` rename, verification, and troubleshooting, is in [`docs/dash-import.md`](docs/dash-import.md).
 
 `tilt up` re-applies the local manifests and recreates the `hcd-deps` pods. SeaweedFS, DynamoDB, Firestore, and Cosmos keep data in memory or on an emptyDir, so a seed that ran before Tilt is wiped on those, and `make pf-emulators` forwards bound to the old pods stop. fake-gcs and Azurite keep their files on the kind node, so a pod restart keeps those two. Seed only after Tilt has created the emulator pods. If a later Tilt restart rolls the pods, run `make pf-emulators` again, then `make local-seed` (and `make dash-import` when SeaweedFS was recreated).
 
