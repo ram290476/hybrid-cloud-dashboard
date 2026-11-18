@@ -31,6 +31,7 @@ type Server struct {
 	Audience    string
 	FacadeKey   string
 	Now         func() time.Time
+	alertBook   *alertBook
 }
 
 func (s *Server) now() time.Time {
@@ -97,6 +98,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/data-health":
 		s.dataHealth(w, r)
+	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/alerts":
+		s.alerts(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/status":
 		s.object(w, r, "serving/status.json")
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/dashboard":

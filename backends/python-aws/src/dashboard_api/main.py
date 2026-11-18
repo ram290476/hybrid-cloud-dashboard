@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from dashboard_api.alerts import alerts_page
 from dashboard_api.auth import parse
 from dashboard_api.data_health import build_data_health, cloud_of
 from dashboard_api.request_log import emit
@@ -176,6 +177,14 @@ def readyz() -> JSONResponse:
 @app.get("/version")
 def version() -> JSONResponse:
     return JSONResponse(_identity(), headers=_headers())
+
+
+@app.get("/api/v1/alerts")
+def alerts(request: Request) -> Response:
+    guard = _guard(request)
+    if isinstance(guard, JSONResponse):
+        return guard
+    return JSONResponse(alerts_page(store, _identity(), datetime.now(timezone.utc)), headers=_headers())
 
 
 @app.get("/api/v1/data-health")

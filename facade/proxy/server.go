@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ram290476/hybrid-cloud-dashboard/facade/alerts"
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/health"
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/logs"
 	"github.com/ram290476/hybrid-cloud-dashboard/facade/policy"
@@ -128,6 +129,7 @@ type Server struct {
 	Frontend   string
 	Logs       logs.Source
 	Remember   func(logs.Entry)
+	Alerts     *alerts.Book
 	Now        func() time.Time
 	// Pick, when set, replaces the random weight draw. Tests use it.
 	Pick *float64
@@ -143,6 +145,8 @@ type Server struct {
 	rt          map[string]*backendRT
 	audit       []Audit
 	rollout     map[string]bool
+	probeOK     map[string]bool
+	probed      map[string]bool
 }
 
 // New builds a server. Call Evaluate once before serving traffic.
@@ -152,7 +156,8 @@ func New(doc policy.Document, hash string) *Server {
 		Doc: doc, ConfigHash: hash, Checker: health.New(),
 		Client: &http.Client{Timeout: 5 * time.Second},
 		Salt:   "hcd-local-salt", Issuer: "http://localhost/dev-auth", Audience: "hcd-local",
-		Now: time.Now, Logs: mem, Remember: mem.Add,
+		Now: time.Now, Logs: mem, Remember: mem.Add, Alerts: alerts.NewBook(),
+		probeOK: map[string]bool{}, probed: map[string]bool{},
 		obs: map[string]policy.Observation{}, weights: map[string]map[string]int{},
 		reasons: map[string]string{}, skipped: map[string][]policy.Skip{},
 		scores: map[string]map[string]float64{}, lastChange: map[string]time.Time{},
@@ -245,6 +250,12 @@ func (s *Server) ProbeOnce() {
 			obs.Reachable = true
 		}
 		s.obs[backend.Name] = obs
+		if s.probeOK == nil {
+			s.probeOK = map[string]bool{}
+			s.probed = map[string]bool{}
+		}
+		s.probeOK[backend.Name] = ok
+		s.probed[backend.Name] = true
 		if ok {
 			rt := s.rt[backend.Name]
 			if info.color != "" {
@@ -317,6 +328,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleRollout(w, r)
 	case r.URL.Path == "/ops/logs" && r.Method == http.MethodGet:
 		s.serveLogs(w, r)
+	case r.URL.Path == "/api/v1/alerts" && r.Method == http.MethodGet:
+		s.serveAlerts(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/"):
 		s.proxy(w, r)
 	default:
@@ -340,6 +353,115 @@ func (s *Server) serveLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func (s *Server) serveAlerts(w http.ResponseWriter, r *http.Request) {
+	query, err := logs.ParseQuery(r.URL.Query(), s.Now())
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	severity := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("severity")))
+	state := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("state")))
+	if severity != "" && severity != "critical" && severity != "warning" && severity != "info" {
+		writeProblem(w, http.StatusBadRequest, "severity must be critical, warning, or info")
+		return
+	}
+	if state != "" && state != "firing" && state != "resolved" {
+		writeProblem(w, http.StatusBadRequest, "state must be firing or resolved")
+		return
+	}
+	s.ProbeOnce()
+	var collected []alerts.Alert
+	var snaps []alerts.Snap
+	for _, backend := range s.Doc.Spec.Backends {
+		if body, ok := s.fetchBackend(backend, "/api/v1/alerts"); ok {
+			var page alerts.Page
+			if json.Unmarshal(body, &page) == nil {
+				collected = append(collected, page.Alerts...)
+			}
+		}
+		if body, ok := s.fetchBackend(backend, "/api/v1/data-health"); ok {
+			var snap alerts.Snap
+			if json.Unmarshal(body, &snap) == nil && snap.Backend != "" {
+				snaps = append(snaps, snap)
+			}
+		}
+	}
+	if s.Alerts == nil {
+		s.Alerts = alerts.NewBook()
+	}
+	collected = append(collected, s.Alerts.Sync(s.facadeFiring(snaps), s.Now())...)
+	writeJSON(w, http.StatusOK, alerts.Filter(collected, query, severity, state))
+}
+
+func (s *Server) fetchBackend(backend policy.Backend, path string) ([]byte, bool) {
+	req, err := http.NewRequest(http.MethodGet, join(backend.Endpoint, path), nil)
+	if err != nil {
+		return nil, false
+	}
+	s.authorize(req)
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	return body, true
+}
+
+func (s *Server) facadeFiring(snaps []alerts.Snap) []alerts.Alert {
+	s.mu.Lock()
+	probeOK := map[string]bool{}
+	probed := map[string]bool{}
+	for name, ok := range s.probeOK {
+		probeOK[name] = ok
+	}
+	for name, ok := range s.probed {
+		probed[name] = ok
+	}
+	audit := append([]Audit(nil), s.audit...)
+	s.mu.Unlock()
+	var out []alerts.Alert
+	for name, seen := range probed {
+		if !seen || probeOK[name] {
+			continue
+		}
+		out = append(out, alerts.Alert{
+			ID: "health:" + name, Severity: "critical", Source: "health", Backend: name,
+			Message: name + " health check is failing",
+		})
+	}
+	out = append(out, alerts.Disagreements(snaps)...)
+	errors := map[string]int{}
+	missing := map[string]int{}
+	failed := map[string]string{}
+	for _, record := range audit {
+		if record.UpstreamStatus >= 500 {
+			errors[record.BackendEnvironment]++
+		}
+		if record.UpstreamStatus == http.StatusNotFound {
+			missing[record.BackendEnvironment]++
+		}
+		if len(record.PriorBackends) > 0 {
+			failed[record.PriorBackends[0].Env] = record.BackendEnvironment
+		}
+	}
+	for name := range errors {
+		out = append(out, alerts.Alert{ID: "errors:" + name, Severity: "critical", Source: "audit", Backend: name, Message: name + " returned 5xx"})
+	}
+	for name, count := range missing {
+		if count >= 3 {
+			out = append(out, alerts.Alert{ID: "not-found:" + name, Severity: "warning", Source: "audit", Backend: name, Message: name + " returned a burst of 404s"})
+		}
+	}
+	for from, to := range failed {
+		out = append(out, alerts.Alert{ID: "failover:" + from, Severity: "warning", Source: "failover", Backend: from, Message: "facade failed over from " + from + " to " + to})
+	}
+	return out
 }
 
 // serveDataHealth calls one named backend. It does not use routing weights and

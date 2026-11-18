@@ -1,5 +1,6 @@
 import { loadReports, renderDataHealth } from "./data-health.js";
-import { logsRequest, readFilters, renderFilterBar, writeFilters } from "./ops-filters.js";
+import { renderAlerts, renderAlertsPanel } from "./ops-alerts.js";
+import { alertsRequest, logsRequest, readFilters, renderFilterBar, writeFilters } from "./ops-filters.js";
 import { mergeEntries, renderLogs } from "./ops-logs.js";
 import { OPS_TABS, searchWithTab, tabFromSearch } from "./ops-tabs.js";
 import { applyTheme } from "./theme.js";
@@ -11,6 +12,7 @@ const routes = document.querySelector("#routes");
 const audit = document.querySelector("#audit");
 const health = document.querySelector("#health");
 const logsRoot = document.querySelector("#logs");
+const alertsRoot = document.querySelector("#alerts");
 let logEntries = [];
 let searchTimer = 0;
 
@@ -46,6 +48,7 @@ function render(state) {
 }
 
 function filtersFromForm(form) {
+  const current = readFilters(location.search);
   const data = new FormData(form);
   return {
     backends: data.getAll("backend"),
@@ -53,41 +56,76 @@ function filtersFromForm(form) {
     from: data.get("from") || "",
     to: data.get("to") || "",
     q: data.get("q") || "",
-    level: data.get("level") || "",
-    live: Boolean(form.querySelector('[name="live"]')?.checked),
+    level: form.querySelector('[name="level"]') ? (data.get("level") || "") : current.level,
+    live: form.querySelector('[name="live"]') ? Boolean(form.querySelector('[name="live"]').checked) : current.live,
+    severity: form.querySelector('[name="severity"]') ? (data.get("severity") || "") : current.severity,
+    state: form.querySelector('[name="state"]') ? (data.get("state") || "") : current.state,
   };
+}
+
+function bindFilterForm(form, refresh) {
+  form.addEventListener("change", (event) => {
+    if (event.target.name === "q") return;
+    pushFilters(filtersFromForm(form), refresh);
+  });
+  form.querySelector('[name="q"]').addEventListener("input", (event) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => pushFilters({ ...filtersFromForm(form), q: event.target.value }, refresh), 300);
+  });
+  form.querySelectorAll("[data-range]").forEach((button) => {
+    button.addEventListener("click", () => {
+      pushFilters({ ...filtersFromForm(form), range: button.getAttribute("data-range") }, refresh);
+    });
+  });
 }
 
 function paintLogs() {
   if (!logsRoot) return;
   const filters = readFilters(location.search);
   logsRoot.innerHTML = `${renderFilterBar(filters, { level: true, live: true })}<div id="logs-results"></div>`;
-  const form = logsRoot.querySelector("form");
-  form.addEventListener("change", (event) => {
-    if (event.target.name === "q") return;
-    pushFilters(filtersFromForm(form));
-  });
-  form.querySelector('[name="q"]').addEventListener("input", (event) => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => pushFilters({ ...filtersFromForm(form), q: event.target.value }), 300);
-  });
-  form.querySelectorAll("[data-range]").forEach((button) => {
-    button.addEventListener("click", () => {
-      pushFilters({ ...filtersFromForm(form), range: button.getAttribute("data-range") });
-    });
-  });
+  bindFilterForm(logsRoot.querySelector("form"), "logs");
   logsRoot.querySelector("#logs-results").addEventListener("click", (event) => {
     const more = event.target.closest("#logs-more");
     if (more) loadLogs(more.getAttribute("data-cursor"));
   });
 }
 
-function pushFilters(patch) {
+function paintAlerts() {
+  if (!alertsRoot) return;
+  alertsRoot.innerHTML = renderAlertsPanel(readFilters(location.search));
+  bindFilterForm(alertsRoot.querySelector("form"), "alerts");
+}
+
+function pushFilters(patch, which) {
   const next = writeFilters(location.search, patch);
   history.replaceState(null, "", `${location.pathname}${next}`);
-  logEntries = [];
-  paintLogs();
-  loadLogs();
+  if (which === "logs") {
+    logEntries = [];
+    paintLogs();
+    loadLogs();
+  } else {
+    paintAlerts();
+    loadAlerts();
+  }
+}
+
+async function loadAlerts() {
+  try {
+    const response = await fetch(alertsRequest(readFilters(location.search)));
+    if (!response.ok) throw new Error(String(response.status));
+    const page = await response.json();
+    const badge = document.querySelector("#alert-count");
+    if (badge) {
+      const count = Number(page.firing || 0);
+      badge.textContent = String(count);
+      badge.hidden = count === 0;
+    }
+    const results = document.querySelector("#alerts-results");
+    if (results) results.innerHTML = renderAlerts(page);
+  } catch (error) {
+    const results = document.querySelector("#alerts-results");
+    if (results) results.innerHTML = `<p class="muted">Alerts are not reachable (${esc(error.message)}).</p>`;
+  }
 }
 
 async function loadLogs(cursor) {
@@ -116,6 +154,10 @@ function showTab(tab) {
     paintLogs();
     loadLogs();
   }
+  if (selected === "alerts" && alertsRoot && !alertsRoot.querySelector("form")) {
+    paintAlerts();
+    loadAlerts();
+  }
 }
 
 document.querySelectorAll("[data-tab]").forEach((button) => {
@@ -140,6 +182,7 @@ async function tick() {
       health.innerHTML = `<p class="muted">Data health is not reachable (${esc(error.message)}).</p>`;
     }
     if (tabFromSearch(location.search) === "logs" && readFilters(location.search).live) loadLogs();
+    loadAlerts();
   } catch (error) {
     cards.innerHTML = `<p class="muted">Facade state is not reachable (${esc(error.message)}). Start it with <span class="metric">make demo</span>.</p>`;
     health.innerHTML = `<p class="muted">Data health needs the facade (${esc(error.message)}).</p>`;

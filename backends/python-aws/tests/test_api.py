@@ -11,6 +11,23 @@ TOKEN = mint("local-dev-secret-change-me", "user-1", "http://localhost/dev-auth"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 
 
+def test_alerts_warn_for_stale_data():
+    from datetime import datetime, timezone
+
+    from dashboard_api.alerts import alerts_page
+    from dashboard_api.main import _identity, store
+
+    fresh = alerts_page(store, _identity(), datetime(2026, 10, 10, 10, tzinfo=timezone.utc))
+    assert fresh["firing"] == 0
+    stale = alerts_page(store, _identity(), datetime(2026, 11, 18, 20, tzinfo=timezone.utc))
+    assert stale["firing"] >= 1
+    assert any(alert["severity"] == "warning" and "stale" in alert["message"] for alert in stale["alerts"])
+    client = TestClient(app)
+    response = client.get("/api/v1/alerts", headers=HEADERS)
+    assert response.status_code == 200
+    assert isinstance(response.json()["alerts"], list)
+
+
 def test_data_health_shape_and_warning_states():
     from datetime import datetime, timezone
 

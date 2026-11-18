@@ -139,6 +139,55 @@ func TestDataHealthQueriesTheNamedBackend(t *testing.T) {
 	}
 }
 
+func TestAlertsHealthFailsAndClears(t *testing.T) {
+	up := true
+	newBackend := func(name, generated string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("content-type", "application/json")
+			switch r.URL.Path {
+			case "/healthz":
+				if !up && name == "gcp-go" {
+					http.Error(w, "down", http.StatusInternalServerError)
+					return
+				}
+				_, _ = w.Write([]byte(`{"status":"ok","lang":"go","color":"blue","version":"dev","data_version":"fixture","runtime":"kind"}`))
+			case "/api/v1/alerts":
+				_, _ = w.Write([]byte(`{"alerts":[],"firing":0}`))
+			case "/api/v1/data-health":
+				fmt.Fprintf(w, `{"backend":%q,"counts":{"chart":1,"stock":1,"funds":0},"files":{"dashboard":{"generated_at":%q},"status":{"generated_at":%q}}}`, name, generated, generated)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+	}
+	a := newBackend("gcp-go", "2026-10-09T00:00:00Z")
+	b := newBackend("aws-python", "2026-10-10T00:00:00Z")
+	defer a.Close()
+	defer b.Close()
+	srv := New(testDoc(a.URL, b.URL), "c0ffee")
+	now := time.Date(2026, 11, 18, 20, 0, 0, 0, time.UTC)
+	srv.Now = func() time.Time { return now }
+	srv.DevInject = true
+	srv.DevSecret = "local-dev-secret-change-me"
+	up = false
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/alerts?backend=gcp-go&from=15m", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"severity": "critical"`) || !strings.Contains(rec.Body.String(), "health check is failing") {
+		t.Fatalf("down %d %s", rec.Code, rec.Body.String())
+	}
+	up = true
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/alerts?q=health&from=24h", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"state": "resolved"`) {
+		t.Fatalf("recovered %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/alerts?q=generated_at&from=24h", nil))
+	if !strings.Contains(rec.Body.String(), "disagree on dashboard generated_at") {
+		t.Fatalf("disagree %s", rec.Body.String())
+	}
+}
+
 func TestOpsLogsFiltersTheRecordedRequest(t *testing.T) {
 	a := backend("go", "blue", false)
 	defer a.Close()

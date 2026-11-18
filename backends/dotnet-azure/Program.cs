@@ -66,6 +66,13 @@ app.MapGet("/readyz", async () =>
     catch (Exception ex) { return Problem(503, ex.Message); }
 });
 
+app.MapGet("/api/v1/alerts", async (HttpRequest req) =>
+{
+    var guard = Guard(req);
+    if (guard.Error is not null) return guard.Error;
+    var page = await Alerts.Page(store, backend, lang, runtime, color, version, dataVersion, DateTimeOffset.UtcNow);
+    return Results.Text(page.ToJsonString(), "application/json");
+});
 app.MapGet("/api/v1/data-health", async (HttpRequest req) =>
 {
     var guard = Guard(req);

@@ -48,6 +48,21 @@ export function writeFilters(search, patch) {
   return text ? `?${text}` : "";
 }
 
+export function alertsRequest(filters) {
+  const params = new URLSearchParams();
+  for (const name of filters.backends || []) params.append("backend", name);
+  if (filters.range === "custom") {
+    if (filters.from) params.set("from", filters.from);
+    if (filters.to) params.set("to", filters.to);
+  } else {
+    params.set("from", filters.range || "15m");
+  }
+  if (filters.q) params.set("q", filters.q);
+  if (filters.severity) params.set("severity", filters.severity);
+  if (filters.state) params.set("state", filters.state);
+  return `/api/v1/alerts?${params.toString()}`;
+}
+
 export function logsRequest(filters, cursor) {
   const params = new URLSearchParams();
   for (const name of filters.backends || []) params.append("backend", name);

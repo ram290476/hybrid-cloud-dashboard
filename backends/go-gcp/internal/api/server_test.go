@@ -143,6 +143,37 @@ func fmtWarnings(items []any) string {
 	return strings.Join(parts, "\n")
 }
 
+func TestAlertsWarnForStaleDataAndNotForFresh(t *testing.T) {
+	srv, _ := newServer(t)
+	token := tokenAt(t, srv, time.Date(2026, 10, 10, 10, 0, 0, 0, time.UTC))
+	rec := call(t, srv, http.MethodGet, "/api/v1/alerts", token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d %s", rec.Code, rec.Body.String())
+	}
+	var fresh map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &fresh); err != nil {
+		t.Fatal(err)
+	}
+	if fresh["firing"] != float64(0) || len(fresh["alerts"].([]any)) != 0 {
+		t.Fatalf("fresh alerts %#v", fresh)
+	}
+	token = tokenAt(t, srv, time.Date(2026, 11, 18, 20, 0, 0, 0, time.UTC))
+	rec = call(t, srv, http.MethodGet, "/api/v1/alerts", token, nil)
+	_ = json.Unmarshal(rec.Body.Bytes(), &fresh)
+	if fresh["firing"] == float64(0) {
+		t.Fatal("stale data produced no alert")
+	}
+	raw, _ := json.Marshal(fresh["alerts"])
+	if !strings.Contains(string(raw), "warning") || !strings.Contains(string(raw), "stale") {
+		t.Fatalf("%s", raw)
+	}
+	srv.Store = store.NewMemory()
+	rec = call(t, srv, http.MethodGet, "/api/v1/alerts", token, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "missing") {
+		t.Fatalf("missing %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDashboardMatchesFixture(t *testing.T) {
 	srv, token := newServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)

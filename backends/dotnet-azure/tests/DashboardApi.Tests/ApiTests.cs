@@ -18,6 +18,27 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task AlertsWarnForStaleData()
+    {
+        var response = await _client.GetAsync("/api/v1/alerts");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+        Assert.True(body["alerts"] is JsonArray);
+        Assert.True(body["firing"]!.GetValue<int>() >= 0);
+        var memory = new MemoryStore();
+        foreach (var key in new[] { "serving/dashboard.json", "serving/status.json" })
+        {
+            var path = Path.Combine(FindRoot(), "contract/fixtures", key.Replace('/', Path.DirectorySeparatorChar));
+            await memory.PutObject(key, await File.ReadAllBytesAsync(path));
+        }
+        var fresh = await Alerts.Page(memory, "azure-dotnet", "dotnet", "app-service", "blue", "dev", "fixture", DateTimeOffset.Parse("2026-10-10T10:00:00Z"));
+        Assert.Equal(0, fresh["firing"]!.GetValue<int>());
+        var stale = await Alerts.Page(memory, "azure-dotnet", "dotnet", "app-service", "blue", "dev", "fixture", DateTimeOffset.Parse("2026-11-18T20:00:00Z"));
+        Assert.True(stale["firing"]!.GetValue<int>() >= 1);
+        Assert.Contains(stale["alerts"]!.AsArray().Select(n => n!["message"]!.GetValue<string>()), message => message.Contains("stale"));
+    }
+
+    [Fact]
     public async Task DataHealthShapeAndWarningStates()
     {
         var response = await _client.GetAsync("/api/v1/data-health");
