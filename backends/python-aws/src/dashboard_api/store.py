@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from typing import Protocol
 
 from dashboard_api.merge import merge_docs
@@ -13,6 +14,7 @@ class Store(Protocol):
     def ready(self) -> None: ...
     def get_object(self, key: str) -> bytes: ...
     def put_object(self, key: str, body: bytes) -> None: ...
+    def list_objects(self, prefix: str) -> list[dict]: ...
     def get_prefs(self, sub: str) -> bytes: ...
     def put_prefs(self, sub: str, body: bytes) -> None: ...
 
@@ -20,6 +22,7 @@ class Store(Protocol):
 class Memory:
     def __init__(self) -> None:
         self.objs: dict[str, bytes] = {}
+        self.mtimes: dict[str, datetime] = {}
         self.prefs: dict[str, bytes] = {}
 
     def ready(self) -> None:
@@ -32,6 +35,14 @@ class Memory:
 
     def put_object(self, key: str, body: bytes) -> None:
         self.objs[key] = body
+        self.mtimes[key] = datetime.now(timezone.utc)
+
+    def list_objects(self, prefix: str) -> list[dict]:
+        return [
+            {"key": key, "modified": self.mtimes.get(key)}
+            for key in self.objs
+            if key.startswith(prefix)
+        ]
 
     def get_prefs(self, sub: str) -> bytes:
         if sub not in self.prefs:
@@ -108,6 +119,22 @@ class S3Dynamo:
             self.memory.put_object(key, body)
             return
         self.s3.put_object(Bucket=self.bucket, Key=key, Body=body)
+
+    def list_objects(self, prefix: str) -> list[dict]:
+        if not self.s3:
+            return self.memory.list_objects(prefix)
+        token = None
+        rows: list[dict] = []
+        while True:
+            kwargs: dict = {"Bucket": self.bucket, "Prefix": prefix}
+            if token:
+                kwargs["ContinuationToken"] = token
+            page = self.s3.list_objects_v2(**kwargs)
+            for item in page.get("Contents") or []:
+                rows.append({"key": item["Key"], "modified": item.get("LastModified")})
+            if not page.get("IsTruncated"):
+                return rows
+            token = page.get("NextContinuationToken")
 
     def get_prefs(self, sub: str) -> bytes:
         # hcd-sync writes the merged document to the object store only.

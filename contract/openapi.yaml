@@ -44,6 +44,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Identity"
+  /api/v1/data-health:
+    get:
+      operationId: getDataHealth
+      summary: Report this backend's serving-store freshness.
+      description: |
+        Reads the backend's own hcd-serving store. A missing or stale object is a
+        warning inside a 200 response, not an error. Data is fresh when both
+        serving/dashboard.json and serving/status.json are present and the older
+        of their generated_at (or last_modified) timestamps is at most
+        fresh_within_seconds old. That window is 36 hours, a margin past one
+        daily collector run. Older data is stale. A missing file is missing.
+      responses:
+        "200":
+          description: Freshness report for this backend's store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataHealth"
+        "401":
+          description: Missing bearer token.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
   /api/v1/dashboard:
     get:
       operationId: getDashboard
@@ -242,6 +266,93 @@ components:
           additionalProperties: { type: object, additionalProperties: true }
         version: { type: integer }
         updated_at: { type: string }
+    DataHealth:
+      type: object
+      required:
+        - backend
+        - lang
+        - runtime
+        - color
+        - version
+        - data_version
+        - cloud
+        - checked_at
+        - freshness
+        - fresh_within_seconds
+        - counts
+        - files
+        - tickers
+        - newest_at
+        - oldest_at
+        - collectors
+        - import
+        - warnings
+      properties:
+        backend: { type: string, enum: [gcp-go, aws-python, azure-dotnet] }
+        lang: { type: string, enum: [go, python, dotnet] }
+        runtime: { type: string }
+        color: { type: string }
+        version: { type: string }
+        data_version: { type: string }
+        cloud: { type: string, enum: [gcp, aws, azure] }
+        checked_at: { type: string, format: date-time }
+        freshness: { type: string, enum: [fresh, stale, missing] }
+        fresh_within_seconds: { type: integer, const: 129600 }
+        counts:
+          $ref: "#/components/schemas/DataHealthCounts"
+        files:
+          type: object
+          required: [dashboard, status]
+          properties:
+            dashboard: { $ref: "#/components/schemas/DataHealthFile" }
+            status: { $ref: "#/components/schemas/DataHealthFile" }
+        tickers:
+          type: array
+          items: { type: string }
+        newest_at: { type: ["string", "null"], format: date-time }
+        oldest_at: { type: ["string", "null"], format: date-time }
+        collectors:
+          type: array
+          items: { $ref: "#/components/schemas/DataHealthCollector" }
+        import:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/DataHealthImport"
+        warnings:
+          type: array
+          items: { type: string }
+    DataHealthCounts:
+      type: object
+      required: [chart, stock, funds]
+      properties:
+        chart: { type: integer, minimum: 0 }
+        stock: { type: integer, minimum: 0 }
+        funds: { type: integer, minimum: 0 }
+    DataHealthFile:
+      type: object
+      required: [key, present, generated_at, last_modified, age_seconds]
+      properties:
+        key: { type: string }
+        present: { type: boolean }
+        generated_at: { type: ["string", "null"] }
+        last_modified: { type: ["string", "null"] }
+        age_seconds: { type: ["integer", "null"] }
+    DataHealthCollector:
+      type: object
+      required: [name, status, last_run, age_seconds]
+      properties:
+        name: { type: string }
+        status: { type: string }
+        last_run: { type: string }
+        age_seconds: { type: ["integer", "null"] }
+    DataHealthImport:
+      type: object
+      required: [source, at]
+      properties:
+        source: { type: string, examples: [local-seed, dash-import] }
+        origin: { type: string, examples: [contract-fixtures, investor-dashboard] }
+        at: { type: string, format: date-time }
+        age_seconds: { type: ["integer", "null"] }
     Problem:
       type: object
       properties:

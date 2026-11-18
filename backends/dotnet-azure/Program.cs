@@ -56,6 +56,13 @@ app.MapGet("/readyz", async () =>
     catch (Exception ex) { return Problem(503, ex.Message); }
 });
 
+app.MapGet("/api/v1/data-health", async (HttpRequest req) =>
+{
+    var guard = Guard(req);
+    if (guard.Error is not null) return guard.Error;
+    var report = await DataHealth.Build(store, backend, lang, runtime, color, version, dataVersion, DateTimeOffset.UtcNow);
+    return Results.Text(report.ToJsonString(), "application/json");
+});
 app.MapGet("/api/v1/status", (HttpRequest req) => Object(req, "serving/status.json"));
 app.MapGet("/api/v1/dashboard", (HttpRequest req) => Object(req, "serving/dashboard.json"));
 app.MapGet("/api/v1/chart/{ticker}", (HttpRequest req, string ticker) => Object(req, $"serving/chart/{ticker}.json"));

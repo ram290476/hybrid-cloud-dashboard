@@ -215,6 +215,19 @@ def test_publish_azure_writes_the_local_container():
     assert _Azure.seen[-1][1] == b'{"ticker":"ARKK"}'
 
 
+def test_with_import_marker_records_source_without_a_bucket():
+    import re
+
+    marked = dash.with_import_marker([("serving/status.json", b"{}"), ("serving/_import.json", b"old")])
+    assert [key for key, _ in marked] == ["serving/status.json", "serving/_import.json"]
+    doc = json.loads(marked[-1][1])
+    assert doc["source"] == "dash-import"
+    assert doc["origin"] == "investor-dashboard"
+    assert doc["at"].endswith("Z")
+    assert "bucket" not in doc
+    assert re.search(r"\d{12}", json.dumps(doc)) is None
+
+
 def test_publish_s3_puts_only_on_the_given_client():
     class Local:
         def __init__(self):

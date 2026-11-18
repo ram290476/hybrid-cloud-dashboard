@@ -2,10 +2,12 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,6 +57,86 @@ func backend(lang, color string, fail bool) *httptest.Server {
 		w.Header().Set("x-data-version", "fixture")
 		_, _ = w.Write([]byte(`{"ok":true,"lang":"` + lang + `"}`))
 	}))
+}
+
+func TestDataHealthQueriesTheNamedBackend(t *testing.T) {
+	seen := map[string]int{}
+	var mu sync.Mutex
+	newBackend := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/healthz" {
+				w.Header().Set("content-type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"ok","lang":"go","color":"blue","version":"dev","data_version":"fixture","runtime":"kind"}`))
+				return
+			}
+			if r.Header.Get("Authorization") == "" {
+				http.Error(w, "missing bearer token", http.StatusUnauthorized)
+				return
+			}
+			mu.Lock()
+			seen[name]++
+			mu.Unlock()
+			if r.URL.Path != "/api/v1/data-health" {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("content-type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"backend":%q,"freshness":"fresh","counts":{"chart":1,"stock":1,"funds":0}}`, name)
+		}))
+	}
+	a := newBackend("gcp-go")
+	b := newBackend("aws-python")
+	defer a.Close()
+	defer b.Close()
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			http.Error(w, "down", http.StatusInternalServerError)
+			return
+		}
+		hj, ok := w.(http.Hijacker)
+		if ok {
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+			return
+		}
+		http.Error(w, "down", http.StatusInternalServerError)
+	}))
+	defer down.Close()
+	// Close the listener so the dial fails instead of returning 500.
+	down.Close()
+	doc := testDoc(a.URL, b.URL, down.URL)
+	srv := New(doc, "c0ffee")
+	srv.DevInject = true
+	srv.DevSecret = "local-dev-secret-change-me"
+	now := time.Unix(1_700_000_000, 0)
+	srv.Now = func() time.Time { return now }
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/facade/data-health/aws-python", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"backend":"aws-python"`) {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/facade/data-health/gcp-go", nil))
+	if !strings.Contains(rec.Body.String(), `"backend":"gcp-go"`) {
+		t.Fatalf("body %s", rec.Body.String())
+	}
+	if seen["gcp-go"] != 1 || seen["aws-python"] != 1 {
+		t.Fatalf("seen %#v", seen)
+	}
+	before := len(srv.State().Audit)
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/facade/data-health/azure-dotnet", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"freshness": "missing"`) || !strings.Contains(rec.Body.String(), "unreachable") {
+		t.Fatalf("down status %d body %s", rec.Code, rec.Body.String())
+	}
+	if len(srv.State().Audit) != before {
+		t.Fatal("data-health poll wrote an audit line")
+	}
+	rec = httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/facade/data-health/nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown %d", rec.Code)
+	}
 }
 
 func TestProxyRoutesAndAudits(t *testing.T) {

@@ -18,6 +18,51 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task DataHealthShapeAndWarningStates()
+    {
+        var response = await _client.GetAsync("/api/v1/data-health");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+        Assert.Equal("azure-dotnet", body["backend"]!.GetValue<string>());
+        Assert.Equal("azure", body["cloud"]!.GetValue<string>());
+        Assert.Equal(DataHealth.FreshWithinSeconds, body["fresh_within_seconds"]!.GetValue<long>());
+        Assert.Contains(body["freshness"]!.GetValue<string>(), new[] { "fresh", "stale", "missing" });
+        Assert.Equal("2026-10-09T22:00:00Z", body["files"]!["dashboard"]!["generated_at"]!.GetValue<string>());
+        Assert.True(body["files"]!["dashboard"]!["present"]!.GetValue<bool>());
+        Assert.Equal("prices_daily", body["collectors"]![0]!["name"]!.GetValue<string>());
+        var age = body["files"]!["dashboard"]!["age_seconds"]!.GetValue<long>();
+        Assert.Equal(age > DataHealth.FreshWithinSeconds ? "stale" : "fresh", body["freshness"]!.GetValue<string>());
+
+        var freshNow = DateTimeOffset.Parse("2026-10-10T10:00:00Z");
+        var memory = new MemoryStore();
+        foreach (var key in new[] { "serving/dashboard.json", "serving/status.json", "serving/chart/TSLA.json", "serving/stock/TSLA.json", "serving/funds/ARKK.json" })
+        {
+            var path = Path.Combine(FindRoot(), "contract/fixtures", key.Replace('/', Path.DirectorySeparatorChar));
+            await memory.PutObject(key, await File.ReadAllBytesAsync(path));
+        }
+        var fresh = await DataHealth.Build(memory, "azure-dotnet", "dotnet", "app-service", "blue", "dev", "fixture-2026.10.09", freshNow);
+        Assert.Equal("fresh", fresh["freshness"]!.GetValue<string>());
+        Assert.Equal(43200, fresh["files"]!["dashboard"]!["age_seconds"]!.GetValue<long>());
+        Assert.Equal(1, fresh["counts"]!["chart"]!.GetValue<int>());
+        Assert.Contains("TSLA", fresh["tickers"]!.AsArray().Select(n => n!.GetValue<string>()));
+        Assert.Null(fresh["import"]);
+
+        await memory.PutObject("serving/_import.json", System.Text.Encoding.UTF8.GetBytes("{\"source\":\"local-seed\",\"origin\":\"contract-fixtures\",\"at\":\"2026-10-10T09:00:00Z\"}"));
+        var marked = await DataHealth.Build(memory, "azure-dotnet", "dotnet", "app-service", "blue", "dev", "fixture-2026.10.09", freshNow);
+        Assert.Equal("local-seed", marked["import"]!["source"]!.GetValue<string>());
+        Assert.Equal(3600, marked["import"]!["age_seconds"]!.GetValue<long>());
+
+        var stale = await DataHealth.Build(memory, "azure-dotnet", "dotnet", "app-service", "blue", "dev", "fixture-2026.10.09", DateTimeOffset.Parse("2026-11-18T20:00:00Z"));
+        Assert.Equal("stale", stale["freshness"]!.GetValue<string>());
+        Assert.Contains(stale["warnings"]!.AsArray().Select(n => n!.GetValue<string>()), warning => warning.Contains("stale"));
+
+        var missing = await DataHealth.Build(new MemoryStore(), "azure-dotnet", "dotnet", "app-service", "blue", "dev", "fixture-2026.10.09", freshNow);
+        Assert.Equal("missing", missing["freshness"]!.GetValue<string>());
+        Assert.Empty(missing["collectors"]!.AsArray());
+        Assert.Contains(missing["warnings"]!.AsArray().Select(n => n!.GetValue<string>()), warning => warning.Contains("serving/dashboard.json is missing"));
+    }
+
+    [Fact]
     public async Task DashboardMatchesFixture()
     {
         var response = await _client.GetAsync("/api/v1/dashboard");

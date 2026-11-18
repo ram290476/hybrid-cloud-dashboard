@@ -211,6 +211,14 @@ def source_client() -> ReadOnlyS3:
     return ReadOnlyS3(client)
 
 
+def with_import_marker(objects: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
+    """Record that this copy came from investor-dashboard, without the bucket name."""
+    marker = _seed().import_marker("dash-import", "investor-dashboard")
+    kept = [(key, body) for key, body in objects if key != marker[0]]
+    kept.append(marker)
+    return kept
+
+
 def publish_all(objects: list[tuple[str, bytes]]) -> None:
     gcs_host = os.environ.get("GCS_EMULATOR_HOST", "http://127.0.0.1:4443")
     gcs_bucket = os.environ.get("GCS_BUCKET", "hcd-serving")
@@ -253,7 +261,7 @@ def main() -> None:
     stock = sum(1 for key, _ in objects if key.startswith("serving/stock/"))
     funds = sum(1 for key, _ in objects if key.startswith("serving/funds/"))
     print(f"read {len(objects)} objects from DASH_BUCKET (chart={chart} stock={stock} funds={funds})")
-    publish_all(objects)
+    publish_all(with_import_marker(objects))
 
 
 if __name__ == "__main__":
