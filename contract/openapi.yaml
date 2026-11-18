@@ -89,6 +89,84 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/Problem"
+  /api/v1/stock/{ticker}:
+    get:
+      operationId: getStock
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+          example: TSLA
+      responses:
+        "200":
+          description: Company page object from serving/stock/{ticker}.json.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+              example:
+                ticker: TSLA
+                data_version: fixture-2026.10.09
+                name: Tesla
+                company_description: Electric vehicles and energy storage.
+                metrics: []
+                unavailable: []
+        "404":
+          description: The stock object is missing.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                detail: missing serving/stock/NOPE.json
+  /api/v1/fund/{ticker}:
+    get:
+      operationId: getFund
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+          example: ARKK
+      responses:
+        "200":
+          description: Fund holdings object from serving/funds/{ticker}.json.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+              example:
+                ticker: ARKK
+                schema_version: 1
+                data_version: fixture-2026.10.09
+                status: ready
+                fund_name: ARK Innovation ETF
+                holdings_source: sec_nport
+                holdings_as_of: "2026-09-30"
+                holdings:
+                  - ticker: TSLA
+                    name: Tesla
+                    pct_nav: 12.5
+                    value_usd: 1000000
+        "404":
+          description: The fund object is missing.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                detail: missing serving/funds/NOPE.json
   /api/v1/prefs:
     get:
       operationId: getPrefs

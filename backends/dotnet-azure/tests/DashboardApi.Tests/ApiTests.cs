@@ -30,6 +30,41 @@ public class ApiTests : IClassFixture<WebApplicationFactory<Program>>
     }
 
     [Fact]
+    public async Task StockAndFundMatchChart()
+    {
+        var chart = await _client.GetAsync("/api/v1/chart/TSLA");
+        var stock = await _client.GetAsync("/api/v1/stock/TSLA");
+        var fund = await _client.GetAsync("/api/v1/fund/ARKK");
+        Assert.Equal(HttpStatusCode.OK, chart.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, stock.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, fund.StatusCode);
+        foreach (var name in new[] { "x-backend-env", "x-backend-lang", "x-backend-runtime", "x-app-color", "x-app-version", "x-data-version", "access-control-allow-origin", "access-control-allow-headers" })
+        {
+            Assert.Equal(chart.Headers.GetValues(name).Single(), stock.Headers.GetValues(name).Single());
+            Assert.Equal(chart.Headers.GetValues(name).Single(), fund.Headers.GetValues(name).Single());
+        }
+        Assert.Equal("application/json", chart.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(chart.Content.Headers.ContentType?.MediaType, stock.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(chart.Content.Headers.ContentType?.MediaType, fund.Content.Headers.ContentType?.MediaType);
+        var root = FindRoot();
+        var wantStock = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(root, "contract/fixtures/serving/stock/TSLA.json")))!;
+        var wantFund = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(root, "contract/fixtures/serving/funds/ARKK.json")))!;
+        Assert.Equal(wantStock.ToJsonString(), JsonNode.Parse(await stock.Content.ReadAsStringAsync())!.ToJsonString());
+        Assert.Equal(wantFund.ToJsonString(), JsonNode.Parse(await fund.Content.ReadAsStringAsync())!.ToJsonString());
+        foreach (var path in new[] { "/api/v1/stock/NOPE", "/api/v1/fund/NOPE" })
+        {
+            var missing = await _client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.Equal("application/problem+json", missing.Content.Headers.ContentType?.MediaType);
+            var problem = JsonNode.Parse(await missing.Content.ReadAsStringAsync())!;
+            Assert.Equal("about:blank", problem["type"]!.GetValue<string>());
+            Assert.Equal(404, problem["status"]!.GetValue<int>());
+            Assert.False(string.IsNullOrEmpty(problem["title"]!.GetValue<string>()));
+            Assert.False(string.IsNullOrEmpty(problem["detail"]!.GetValue<string>()));
+        }
+    }
+
+    [Fact]
     public async Task PrefsKeepsUnrelatedField()
     {
         var current = JsonNode.Parse(await (await _client.GetAsync("/api/v1/prefs")).Content.ReadAsStringAsync())!.AsObject();

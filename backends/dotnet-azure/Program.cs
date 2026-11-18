@@ -19,7 +19,7 @@ var facadeKey = Environment.GetEnvironmentVariable("FACADE_KEY") ?? "";
 var fixtures = Env("FIXTURES_DIR", FindFixtures());
 
 var memory = new MemoryStore();
-foreach (var key in new[] { "serving/dashboard.json", "serving/status.json", "serving/chart/TSLA.json", "serving/chart/SPCX.json" })
+foreach (var key in new[] { "serving/dashboard.json", "serving/status.json", "serving/chart/TSLA.json", "serving/chart/SPCX.json", "serving/stock/TSLA.json", "serving/stock/SPCX.json", "serving/funds/ARKK.json" })
 {
     var path = Path.Combine(fixtures, key.Replace('/', Path.DirectorySeparatorChar));
     if (File.Exists(path)) await memory.PutObject(key, await File.ReadAllBytesAsync(path));
@@ -59,6 +59,8 @@ app.MapGet("/readyz", async () =>
 app.MapGet("/api/v1/status", (HttpRequest req) => Object(req, "serving/status.json"));
 app.MapGet("/api/v1/dashboard", (HttpRequest req) => Object(req, "serving/dashboard.json"));
 app.MapGet("/api/v1/chart/{ticker}", (HttpRequest req, string ticker) => Object(req, $"serving/chart/{ticker}.json"));
+app.MapGet("/api/v1/stock/{ticker}", (HttpRequest req, string ticker) => Object(req, $"serving/stock/{ticker}.json"));
+app.MapGet("/api/v1/fund/{ticker}", (HttpRequest req, string ticker) => Object(req, $"serving/funds/{ticker}.json"));
 app.MapGet("/api/v1/prefs", async (HttpRequest req) =>
 {
     var guard = Guard(req);

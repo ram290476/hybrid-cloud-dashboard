@@ -23,6 +23,42 @@ def test_dashboard_matches_fixture(monkeypatch):
     assert response.json() == want
 
 
+def test_stock_and_fund_match_chart(monkeypatch):
+    monkeypatch.setenv("FACADE_KEY", "")
+    client = TestClient(app)
+    chart = client.get("/api/v1/chart/TSLA", headers=HEADERS)
+    stock = client.get("/api/v1/stock/TSLA", headers=HEADERS)
+    fund = client.get("/api/v1/fund/ARKK", headers=HEADERS)
+    assert chart.status_code == stock.status_code == fund.status_code == 200
+    for name in (
+        "content-type",
+        "x-backend-env",
+        "x-backend-lang",
+        "x-backend-runtime",
+        "x-app-color",
+        "x-app-version",
+        "x-data-version",
+        "access-control-allow-origin",
+        "access-control-allow-headers",
+    ):
+        assert stock.headers[name] == chart.headers[name]
+        assert fund.headers[name] == chart.headers[name]
+    assert stock.headers["content-type"].startswith("application/json")
+    want_stock = json.loads((ROOT / "contract/fixtures/serving/stock/TSLA.json").read_text())
+    want_fund = json.loads((ROOT / "contract/fixtures/serving/funds/ARKK.json").read_text())
+    assert stock.json() == want_stock
+    assert fund.json() == want_fund
+    for path in ("/api/v1/stock/NOPE", "/api/v1/fund/NOPE"):
+        missing = client.get(path, headers=HEADERS)
+        assert missing.status_code == 404
+        assert missing.headers["content-type"].startswith("application/problem+json")
+        problem = missing.json()
+        assert problem["type"] == "about:blank"
+        assert problem["status"] == 404
+        assert problem["title"]
+        assert problem["detail"]
+
+
 def test_prefs_keeps_unrelated_field():
     client = TestClient(app)
     current = client.get("/api/v1/prefs", headers=HEADERS).json()

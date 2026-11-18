@@ -13,11 +13,22 @@ spec:
       containers:
       - name: fake-gcs
         image: fsouza/fake-gcs-server:1.52.2
-        args: ["-scheme", "http", "-port", "4443", "-backend", "memory", "-public-host", "fake-gcs.hcd-deps.svc.cluster.local:4443"]
+        securityContext:
+          runAsUser: 0
+        args: ["-scheme", "http", "-port", "4443", "-backend", "filesystem", "-filesystem-root", "/storage", "-public-host", "fake-gcs.hcd-deps.svc.cluster.local:4443"]
         ports:
         - containerPort: 4443
+        volumeMounts:
+        - name: data
+          mountPath: /storage
         readinessProbe:
           httpGet: { path: /storage/v1/b, port: 4443 }
+      # Kind node disk. A pod restart keeps the bucket. Deleting the cluster does not.
+      volumes:
+      - name: data
+        hostPath:
+          path: /var/lib/hcd/fake-gcs
+          type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

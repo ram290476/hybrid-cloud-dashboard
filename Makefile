@@ -1,4 +1,4 @@
-.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate cluster-up cluster-down local-seed pf-emulators pf-gateway sync-status lint
+.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate cluster-up cluster-down local-seed dash-import pf-emulators pf-gateway sync-status lint
 
 export PATH := $(HOME)/.dotnet:$(PATH)
 DOTNET ?= dotnet
@@ -12,7 +12,7 @@ test-go:
 	cd sync && go test ./...
 
 test-python:
-	python3 -m pytest backends/python-aws/tests scripts/test_local_seed.py -q
+	python3 -m pytest backends/python-aws/tests scripts/test_local_seed.py scripts/test_dash_import.py -q
 
 test-dotnet:
 	$(DOTNET) test backends/dotnet-azure/tests/DashboardApi.Tests/DashboardApi.Tests.csproj --nologo
@@ -34,6 +34,11 @@ demo:
 
 local-seed:
 	python3 scripts/local-seed.py
+
+# Read-only copy of investor-dashboard serving/ into the local emulators.
+# DASH_BUCKET, AWS_PROFILE, and AWS_REGION come from the environment.
+dash-import:
+	python3 scripts/dash-import.py
 
 sync-status:
 	@set -a && . ./scripts/hcd-sync-env.sh && set +a && cd sync && HCD_SYNC_ONCE=1 go run ./cmd/hcd-sync -once

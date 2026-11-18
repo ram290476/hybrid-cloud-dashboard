@@ -78,6 +78,12 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request, start time.Time) {
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/chart/"):
 		ticker := strings.TrimPrefix(r.URL.Path, "/api/v1/chart/")
 		s.object(w, r, "serving/chart/"+ticker+".json")
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/stock/"):
+		ticker := strings.TrimPrefix(r.URL.Path, "/api/v1/stock/")
+		s.object(w, r, "serving/stock/"+ticker+".json")
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/fund/"):
+		ticker := strings.TrimPrefix(r.URL.Path, "/api/v1/fund/")
+		s.object(w, r, "serving/funds/"+ticker+".json")
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/prefs":
 		s.getPrefs(w, r, sub)
 	case r.Method == http.MethodPut && r.URL.Path == "/api/v1/prefs":

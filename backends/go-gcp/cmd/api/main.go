@@ -34,7 +34,12 @@ func main() {
 }
 
 func seed(mem *store.Memory, dir string) {
-	for _, key := range []string{"serving/dashboard.json", "serving/status.json", "serving/chart/TSLA.json", "serving/chart/SPCX.json"} {
+	for _, key := range []string{
+		"serving/dashboard.json", "serving/status.json",
+		"serving/chart/TSLA.json", "serving/chart/SPCX.json",
+		"serving/stock/TSLA.json", "serving/stock/SPCX.json",
+		"serving/funds/ARKK.json",
+	} {
 		body, err := os.ReadFile(dir + "/" + key)
 		if err != nil {
 			continue
