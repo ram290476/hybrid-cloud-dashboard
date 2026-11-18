@@ -27,6 +27,7 @@ sync/                     field-level merge across the three object stores
 deploy/                   kind config, Kustomize for kind and the local facade
 infra/terraform/          Terraform HCL for gcp, aws, azure, and a gated cloudflare sketch
 docs/runbooks/public-dns.md   GoDaddy CNAME for hybridcloud.vellamsetti.com
+docs/local-ports.md           Host, cluster, and dependency ports for local kind + Tilt
 ```
 
 Section 11 of the architecture copies `apps/web` as zero-build ES modules. The market screens stay that app, synced from investor-dashboard `f6c4c1e` (theme tokens, styles, layout modules, and `safe-storage.js`). `frontend/hybrid.html` is the hybrid operations page and uses the same Industrial Dark tokens (`theme.js`, IBM Plex, `styles.css`).
@@ -87,6 +88,8 @@ That forwards the Envoy Service in namespace `envoy-gateway-system` (Envoy Gatew
 | DynamoDB Local | 8000 | 8000 |
 | Firestore emulator | 8787 | 8080 |
 | Cosmos gateway / health / explorer | 18081 / 18080 / 11234 | 8081 / 8080 / 1234 |
+
+A full list of host, in-cluster, and dependency ports, including the Mac host 8080/8081 reservation, is in [`docs/local-ports.md`](docs/local-ports.md).
 
 `make sync-status` sources `scripts/hcd-sync-env.sh` before the one-shot sync.
 
