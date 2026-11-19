@@ -68,6 +68,13 @@ spec:
   - matches:
     - path:
         type: PathPrefix
+        value: /ops
+    backendRefs:
+    - name: facade
+      port: 8080
+  - matches:
+    - path:
+        type: PathPrefix
         value: /
     backendRefs:
     - name: frontend

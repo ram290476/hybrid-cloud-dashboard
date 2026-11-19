@@ -83,7 +83,7 @@ function esc(value) {
   return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
 }
 
-export function renderFilterBar(filters, { level = false, live = false, extras = "" } = {}) {
+export function renderFilterBar(filters, { level = false, live = false, extras = "", placeholder = "Search logs" } = {}) {
   const selected = new Set(filters.backends || []);
   const checks = FILTER_BACKENDS.map((name) => `<label><input type="checkbox" name="backend" value="${esc(name)}" ${selected.has(name) ? "checked" : ""}> ${esc(name)}</label>`).join("");
   const presets = RANGE_PRESETS.map((name) => `<button type="button" data-range="${esc(name)}" aria-pressed="${filters.range === name ? "true" : "false"}">${esc(name)}</button>`).join("");
@@ -97,7 +97,7 @@ export function renderFilterBar(filters, { level = false, live = false, extras =
     <div class="ranges" role="group" aria-label="Date range">${presets}</div>
     <label class="custom-range">From <input type="datetime-local" name="from" value="${esc(filters.from)}"></label>
     <label class="custom-range">To <input type="datetime-local" name="to" value="${esc(filters.to)}"></label>
-    <label>Search <input type="search" name="q" value="${esc(filters.q)}" placeholder="Search logs"></label>
+    <label>Search <input type="search" name="q" value="${esc(filters.q)}" placeholder="${esc(placeholder)}"></label>
     ${levelSelect}
     ${liveBox}
     ${extras}

@@ -38,7 +38,7 @@ test("filters round-trip through the URL", () => {
   assert.match(logsRequest(filters), /from=1h/);
   assert.match(logsRequest(filters), /backend=gcp-go/);
   assert.match(logsRequest(filters), /q=TSLA/);
-  assert.match(renderFilterBar(filters, { level: true, live: true }), /name="q"/);
+  assert.match(renderFilterBar(filters, { level: true, live: true }), /placeholder="Search logs"/);
   assert.match(renderFilterBar(filters, { level: true }), /value="gcp-go"/);
 });
 
