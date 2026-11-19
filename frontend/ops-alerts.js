@@ -39,7 +39,7 @@ export function renderAlerts(page) {
 }
 
 export function renderAlertsPanel(filters) {
-  return `${renderFilterBar(filters, { extras: alertExtras(filters) })}<div id="alerts-results"></div>`;
+  return `${renderFilterBar(filters, { extras: alertExtras(filters), placeholder: "Search alerts" })}<div id="alerts-results"></div>`;
 }
 
 export { alertsRequest };

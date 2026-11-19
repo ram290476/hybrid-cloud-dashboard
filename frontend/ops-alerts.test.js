@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { alertHref, renderAlerts } from "./ops-alerts.js";
+import { alertHref, renderAlerts, renderAlertsPanel } from "./ops-alerts.js";
 import { alertsRequest, readFilters, writeFilters } from "./ops-filters.js";
 
 const firing = {
@@ -51,6 +51,23 @@ test("alerts render firing rows, resolved rows, links, and the empty state", () 
   assert.equal(alertHref({ source: "health" }), "?tab=ops");
   assert.equal(alertHref({ source: "audit" }), "?tab=ops#audit");
   assert.match(renderAlerts({ alerts: [{ ...firing, state: "resolved" }], firing: 0 }), /No active alerts/);
+});
+
+test("the alerts search box does not reuse the logs placeholder", () => {
+  const filters = { backends: [], range: "15m", from: "", to: "", q: "", severity: "", state: "" };
+  const html = renderAlertsPanel(filters);
+  assert.match(html, /placeholder="Search alerts"/);
+  assert.doesNotMatch(html, /placeholder="Search logs"/);
+});
+
+test("the local gateway sends /ops to the facade before the frontend catch-all", () => {
+  const yaml = readFileSync(new URL("../deploy/overlays/local/app/gateway.yaml", import.meta.url), "utf8");
+  const ops = yaml.indexOf("value: /ops");
+  const root = yaml.indexOf("value: /\n");
+  assert.ok(ops > 0, "missing /ops path");
+  assert.ok(root > ops, "/ops must be matched before the frontend catch-all");
+  const rule = yaml.slice(ops, root);
+  assert.match(rule, /name: facade/);
 });
 
 test("the operations page adds the alerts tab beside logs", () => {
