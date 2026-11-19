@@ -2,6 +2,7 @@ FROM golang:1.22-bookworm AS build
 WORKDIR /src
 COPY libs/devjwt /src/libs/devjwt
 COPY libs/merge /src/libs/merge
+COPY libs/otellog /src/libs/otellog
 COPY backends/go-gcp /src/backends/go-gcp
 WORKDIR /src/backends/go-gcp
 RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api

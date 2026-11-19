@@ -35,6 +35,15 @@ jobs:
       - name: Tests
         run: make test
 
+  images:
+    # Catches a replace path that the Dockerfile or Tilt context forgot to copy.
+    # The images stay on the runner. This job does not push or deploy.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+      - name: Build facade and go-gcp
+        run: make images
+
   terraform:
     # HashiCorp Terraform 1.9.8. Each root sets required_version >= 1.6.0.
     # This job validates only. It does not apply.

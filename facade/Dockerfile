@@ -1,6 +1,7 @@
 FROM golang:1.22-bookworm AS build
 WORKDIR /src
 COPY libs/devjwt /src/libs/devjwt
+COPY libs/otellog /src/libs/otellog
 COPY facade /src/facade
 WORKDIR /src/facade
 RUN CGO_ENABLED=0 go build -o /out/facade ./cmd/facade

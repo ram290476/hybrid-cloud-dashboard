@@ -1,4 +1,4 @@
-.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate cluster-up cluster-down local-seed dash-import pf-emulators pf-gateway sync-status lint
+.PHONY: test test-go test-python test-dotnet test-node demo dev-token contract-test terraform-validate images cluster-up cluster-down local-seed dash-import pf-emulators pf-gateway sync-status lint
 
 export PATH := $(HOME)/.dotnet:$(PATH)
 DOTNET ?= dotnet
@@ -46,6 +46,11 @@ sync-status:
 
 # HashiCorp Terraform is the infrastructure tool. Each root sets
 # required_version >= 1.6.0. CI installs Terraform 1.9.8. Validate only.
+# Build the two images whose Dockerfiles copy libs/otellog. No registry push.
+images:
+	docker build -f facade/Dockerfile -t hcd-facade:ci .
+	docker build -f backends/go-gcp/Dockerfile -t hcd-go-gcp:ci .
+
 terraform-validate:
 	@set -e; for dir in infra/terraform/gcp infra/terraform/aws infra/terraform/azure infra/terraform/cloudflare infra/terraform/aws/modules/lambda-url infra/terraform/labs/eks infra/terraform/labs/aks infra/terraform/labs/gke; do \
 	  echo "== $$dir"; \
