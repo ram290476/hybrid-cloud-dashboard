@@ -21,7 +21,7 @@ docker_build(
     "localhost:5001/hcd-facade",
     ".",
     dockerfile = "facade/Dockerfile",
-    only = ["facade", "libs/devjwt", "frontend"],
+    only = ["facade", "libs/devjwt", "libs/otellog", "frontend"],
 )
 docker_build(
     "localhost:5001/hcd-frontend",
